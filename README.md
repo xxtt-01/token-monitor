@@ -30,10 +30,15 @@ Only summary numbers ever leave your machine. Raw prompts, source files, and con
 - Live token tracking for Claude Code, Codex, and Hermes — UI updates within seconds of each turn
 - Switch breakdown views — group totals by tool, device, or model
 - Cost breakdown alongside token counts
+- Appearance controls — adjust glass opacity/blur and window look (including transparent glass)
 - Local-first — no servers needed for single-device use
 - Real-time multi-device sync over Server-Sent Events (self-hosted hub or Cloudflare Worker)
 - iOS widget support (Widgy, Scriptable) through the Worker hub
 - Privacy-first — only summary numbers ever leave your machine
+
+| Daily View | Devices View | Models View |
+|:---:|:---:|:---:|
+| ![Daily View](.github/assets/daily-view.png) | ![Devices View](.github/assets/devices-view.png) | ![Models View](.github/assets/models-view.png) | 
 
 ## Supported Tools
 
