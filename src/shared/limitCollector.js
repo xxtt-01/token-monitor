@@ -75,6 +75,17 @@ function codexAuthPath(env = process.env) {
   return path.join(base, 'auth.json');
 }
 
+function uniqueStrings(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
 function extractClaudeOauth(credentials) {
   return credentials?.claudeAiOauth || credentials?.oauth || credentials || null;
 }
@@ -538,14 +549,78 @@ async function readCodexAuthIdentity(deps = {}) {
   }
 }
 
+function pathDelimiterForPlatform(platform = process.platform) {
+  return platform === 'win32' ? ';' : ':';
+}
+
+function withCodexPathHints(env = process.env, platform = process.platform) {
+  const delimiter = pathDelimiterForPlatform(platform);
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH';
+  const currentPath = env[pathKey] || '';
+  const hints = [];
+  if (platform === 'win32') {
+    if (env.APPDATA) hints.push(path.join(env.APPDATA, 'npm'));
+    if (env.LOCALAPPDATA) hints.push(path.join(env.LOCALAPPDATA, 'pnpm'));
+    if (env.USERPROFILE) hints.push(path.join(env.USERPROFILE, '.bun', 'bin'));
+  } else {
+    hints.push('/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
+    if (env.HOME) {
+      hints.push(
+        path.join(env.HOME, '.npm-global', 'bin'),
+        path.join(env.HOME, '.bun', 'bin'),
+        path.join(env.HOME, '.local', 'bin')
+      );
+    }
+  }
+  return {
+    ...env,
+    [pathKey]: uniqueStrings([...hints, ...currentPath.split(delimiter)]).join(delimiter)
+  };
+}
+
+function existingCodexCommandCandidates(candidates, deps = {}) {
+  const existsSync = deps.existsSync || fs.existsSync;
+  return candidates.filter((candidate) => {
+    if (!path.isAbsolute(candidate)) return true;
+    return existsSync(candidate);
+  });
+}
+
+function codexSpawnSpec(command, platform = process.platform) {
+  const args = ['-s', 'read-only', '-a', 'untrusted', 'app-server'];
+  if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(command)) {
+    return { command, args };
+  }
+  return {
+    command: 'cmd.exe',
+    args: ['/d', '/s', '/c', [quoteWindowsCmdArg(command), ...args.map(quoteWindowsCmdArg)].join(' ')]
+  };
+}
+
+function quoteWindowsCmdArg(value) {
+  const text = String(value);
+  if (/^[A-Za-z0-9_./:=\\-]+$/.test(text)) return text;
+  return `"${text.replace(/"/g, '\\"')}"`;
+}
+
 function spawnCodexAppServer(deps = {}) {
   const spawnFn = deps.spawn || spawn;
   const env = deps.env || process.env;
-  const command = deps.codexCommand || codexCommandCandidates(env, process.platform)[0];
-  return spawnFn(command, ['-s', 'read-only', '-a', 'untrusted', 'app-server'], {
+  const platform = deps.platform || process.platform;
+  const command = deps.codexCommand || existingCodexCommandCandidates(codexCommandCandidates(env, platform), deps)[0];
+  if (!command) throw errorWithStatus('notConfigured', 'Codex CLI not found');
+  const spec = codexSpawnSpec(command, platform);
+  return spawnFn(spec.command, spec.args, {
     windowsHide: true,
-    env
+    env: withCodexPathHints(env, platform)
   });
+}
+
+function codexRpcCommandCandidates(deps = {}) {
+  const env = deps.env || process.env;
+  const platform = deps.platform || process.platform;
+  if (deps.codexCommand) return [deps.codexCommand];
+  return existingCodexCommandCandidates(codexCommandCandidates(env, platform), deps);
 }
 
 function codexCommandCandidates(env = process.env, platform = process.platform) {
@@ -556,9 +631,13 @@ function codexCommandCandidates(env = process.env, platform = process.platform) 
   } else if (platform === 'win32') {
     if (env.LOCALAPPDATA) candidates.push(path.join(env.LOCALAPPDATA, 'Programs', 'Codex', 'resources', 'codex.exe'));
     if (env.PROGRAMFILES) candidates.push(path.join(env.PROGRAMFILES, 'Codex', 'resources', 'codex.exe'));
+    if (env['PROGRAMFILES(X86)']) candidates.push(path.join(env['PROGRAMFILES(X86)'], 'Codex', 'resources', 'codex.exe'));
+    if (env.APPDATA) candidates.push(path.join(env.APPDATA, 'npm', 'codex.cmd'));
+    candidates.push('codex.cmd', 'codex.exe');
+    if (env.LOCALAPPDATA) candidates.push(path.join(env.LOCALAPPDATA, 'Programs', 'Codex', 'Codex.exe'));
   }
   candidates.push('codex');
-  return candidates;
+  return uniqueStrings(candidates);
 }
 
 function createJsonRpcClient(child, timeoutMs) {
@@ -621,24 +700,53 @@ function createJsonRpcClient(child, timeoutMs) {
   return { send, notify, rejectAll };
 }
 
-async function readCodexRpc(deps = {}) {
-  await readCodexAuthIdentity(deps);
+function shouldTryNextCodexCommand(error) {
+  if (error?.code === 'ENOENT') return true;
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('app-server exited') ||
+    message.includes('initialize timed out') ||
+    message.includes('enoent') ||
+    message.includes('not recognized') ||
+    message.includes('not found')
+  );
+}
+
+async function readCodexRpcWithCommand(command, deps = {}) {
   const timeoutMs = Number(deps.codexRpcTimeoutMs || 12000);
-  const child = spawnCodexAppServer(deps);
+  const child = spawnCodexAppServer({ ...deps, codexCommand: command });
   const rpc = createJsonRpcClient(child, timeoutMs);
   try {
     await rpc.send('initialize', {
       clientInfo: { name: 'token-monitor', title: 'Token Monitor', version: '0.1.0' }
     });
     rpc.notify('initialized', {});
-    const accountResult = await rpc.send('account/read', { refreshToken: false });
-    const account = accountResult?.account || null;
-    if (!account) throw errorWithStatus('notConfigured', 'Codex account not configured');
     const rateLimitResult = await rpc.send('account/rateLimits/read');
-    return { account, rateLimits: rateLimitResult?.rateLimits || rateLimitResult?.rate_limits || {} };
+    const accountResult = await rpc.send('account/read').catch(() => null);
+    const account = accountResult?.account || null;
+    const rateLimits = rateLimitResult?.rateLimits || rateLimitResult?.rate_limits || {};
+    if (!account && !rateLimits?.primary && !rateLimits?.secondary) {
+      throw errorWithStatus('notConfigured', 'Codex account not configured');
+    }
+    return { account, rateLimits };
   } finally {
     try { child.kill('SIGTERM'); } catch (_) {}
   }
+}
+
+async function readCodexRpc(deps = {}) {
+  const commands = codexRpcCommandCandidates(deps);
+  if (commands.length === 0) throw errorWithStatus('notConfigured', 'Codex CLI not found');
+  let lastError = null;
+  for (const command of commands) {
+    try {
+      return await readCodexRpcWithCommand(command, deps);
+    } catch (error) {
+      lastError = error;
+      if (deps.codexCommand || !shouldTryNextCodexCommand(error)) throw error;
+    }
+  }
+  throw lastError || errorWithStatus('notConfigured', 'Codex CLI not found');
 }
 
 async function fetchCodexLimits(options = {}, deps = {}) {
