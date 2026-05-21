@@ -20,21 +20,26 @@
 
 ## What is Token Monitor?
 
-A desktop widget that shows live token usage across your AI coding tools — Claude Code, Codex, Hermes, OpenCode, OpenClaw, Cursor, and more — with cost breakdowns per client and per model.
+A desktop widget that shows live token usage and AI Tool Limits across your AI coding tools — Claude Code, Codex, Hermes, OpenCode, OpenClaw, Cursor, and more — with breakdowns by tool, device, and model.
 
-It runs entirely on your own machine by default. An optional hub aggregates usage across multiple devices, including iPhones via a Cloudflare Worker.
+It runs entirely on your own machine by default. Add an optional hub to sync token changes from multiple Macs, Windows PCs, headless agents, and iPhone widgets in seconds.
 
 Only summary numbers ever leave your machine. Raw prompts, source files, and conversation transcripts stay local.
+
+## Why Token Monitor?
+
+Most usage monitors are useful on the machine they run on. Token Monitor is built for multi-device work: each device watches its own local logs, sends summary updates to your hub, and every connected widget sees token changes almost immediately.
 
 ## Features
 
 - Live token tracking for Claude Code, Codex, Hermes, OpenCode, OpenClaw, and Cursor — UI updates within seconds of each turn
+- Real-time multi-device token sync — changes on any connected device appear on every widget within seconds
 - Switch breakdown views — group totals by tool, device, model, or account limits
 - Cost breakdown alongside token counts
 - Claude Code and Codex limit detection — shows session and weekly windows when local tool credentials are available
 - Appearance controls — adjust glass opacity/blur and window look (including transparent glass)
 - Local-first — no servers needed for single-device use
-- Real-time multi-device sync over Server-Sent Events (self-hosted hub or Cloudflare Worker)
+- Self-hosted sync backend — use a Node hub or Cloudflare Worker over Server-Sent Events
 - iOS widget support (Widgy, Scriptable) through the Worker hub
 - Privacy-first — only summary numbers ever leave your machine
 
