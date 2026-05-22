@@ -80,10 +80,15 @@ function restoredBounds() {
 }
 
 let persistBoundsTimer = null;
+function stopPersistBoundsTimer() {
+  if (persistBoundsTimer) clearTimeout(persistBoundsTimer);
+  persistBoundsTimer = null;
+}
+
 function persistBoundsSoon() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized() || mainWindow.isFullScreen()) return;
-  if (persistBoundsTimer) clearTimeout(persistBoundsTimer);
+  stopPersistBoundsTimer();
   persistBoundsTimer = setTimeout(() => {
     persistBoundsTimer = null;
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -369,10 +374,20 @@ function startMode() {
 }
 
 function stopAll() {
+  stopPersistBoundsTimer();
   stopLocalCollector();
   stopStatsStream();
   stopSyncCollector();
   stopDiscordRpc();
+}
+
+let quitRequested = false;
+function requestAppQuit() {
+  if (quitRequested) return;
+  quitRequested = true;
+  stopAll();
+  if (app.isReady()) app.quit();
+  else app.exit(0);
 }
 
 async function fetchStats() {
@@ -549,3 +564,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', stopAll);
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.once(signal, requestAppQuit);
+}
