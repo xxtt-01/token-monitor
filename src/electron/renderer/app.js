@@ -68,11 +68,26 @@ const LIMIT_SOURCE_LABELS = { oauth: 'OAuth', cli: 'CLI', web: 'Web', rpc: 'CLI'
 const deviceColors = ['#49a3b0', '#6ab4f0', '#cc7c5e', '#a57df0', '#f0d66a', '#f06a7b'];
 const fallbackModelColors = ['#6ab4f0', '#cc7c5e', '#a57df0', '#49a3b0', '#f0d66a', '#f06a7b'];
 const baseBreakdownOrder = ['tool', 'device', 'model'];
-const state = { period: 'today', breakdown: 'tool', settings: null, stats: null, refreshTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, mode: 'idle' };
+const state = { period: 'today', breakdown: 'tool', settings: null, stats: null, refreshTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false };
 const defaultAppearance = { glassOpacity: 68, glassBlur: 32, zoomFactor: 1, systemGlass: true, showLiveDot: true, showToolIcons: true };
 const els = {
   shell: document.querySelector('.shell'), status: document.getElementById('status'), liveDot: document.getElementById('liveDot'), totalTokens: document.getElementById('totalTokens'), cost: document.getElementById('cost'), breakdown: document.getElementById('breakdown'), limitsPanel: document.getElementById('limitsPanel'), breakdownToggle: document.getElementById('breakdownToggle'), pinButton: document.getElementById('pinButton'), settingsButton: document.getElementById('settingsButton'), settingsPanel: document.getElementById('settingsPanel'), hubUrlInput: document.getElementById('hubUrlInput'), secretInput: document.getElementById('secretInput'), deviceIdInput: document.getElementById('deviceIdInput'), limitProviderCheckboxes: document.getElementById('limitProviderCheckboxes'), limitsRefreshInput: document.getElementById('limitsRefreshInput'), showLimitSourceInput: document.getElementById('showLimitSourceInput'), systemGlassInput: document.getElementById('systemGlassInput'), liveDotInput: document.getElementById('liveDotInput'), toolIconsInput: document.getElementById('toolIconsInput'), discordRpcInput: document.getElementById('discordRpcInput'), trayModeInput: document.getElementById('trayModeInput'), trayContentInput: document.getElementById('trayContentInput'), glassInput: document.getElementById('glassInput'), blurInput: document.getElementById('blurInput'), zoomInput: document.getElementById('zoomInput'), resetGlassButton: document.getElementById('resetGlassButton'), resetDepthButton: document.getElementById('resetDepthButton'), resetZoomButton: document.getElementById('resetZoomButton'), saveSettingsButton: document.getElementById('saveSettingsButton'), clientCheckboxes: document.getElementById('clientCheckboxes'), openConfigButton: document.getElementById('openConfigButton'), refreshButton: document.getElementById('refreshButton'), minButton: document.getElementById('minButton'), closeButton: document.getElementById('closeButton')
 };
+Object.assign(els, {
+  startupGroup: document.getElementById('startupGroup'),
+  startAtLoginInput: document.getElementById('startAtLoginInput'),
+  startupNote: document.getElementById('startupNote'),
+  tokscaleGroup: document.getElementById('tokscaleGroup'),
+  tokscaleInstalled: document.getElementById('tokscaleInstalled'),
+  tokscaleBundledLine: document.getElementById('tokscaleBundledLine'),
+  tokscaleBundled: document.getElementById('tokscaleBundled'),
+  tokscaleNpm: document.getElementById('tokscaleNpm'),
+  tokscaleMessage: document.getElementById('tokscaleMessage'),
+  checkTokscaleButton: document.getElementById('checkTokscaleButton'),
+  downloadTokscaleButton: document.getElementById('downloadTokscaleButton'),
+  resetTokscaleButton: document.getElementById('resetTokscaleButton'),
+  openTokscaleLinkButton: document.getElementById('openTokscaleLinkButton')
+});
 
 function formatNumber(value) { return Math.round(Number(value || 0)).toLocaleString('en-US'); }
 function formatCost(value) { const amount = Number(value || 0); return `$${amount.toFixed(amount >= 10 ? 2 : 4)}`; }
@@ -106,6 +121,13 @@ function formatUpdatedAge(value) {
   if (hours < 24) return `Updated ${hours}h ago`;
   return `Updated ${Math.round(hours / 24)}d ago`;
 }
+function versionText(value) {
+  return value ? `v${value}` : 'unknown';
+}
+function compactAge(value) {
+  const label = formatUpdatedAge(value);
+  return label === 'Update unknown' ? '' : label.replace('Updated ', '');
+}
 function colorWithAlpha(hex, alpha) {
   const raw = String(hex || '').replace('#', '');
   if (!/^[0-9a-f]{6}$/i.test(raw)) return `rgba(183, 234, 212, ${alpha})`;
@@ -113,6 +135,126 @@ function colorWithAlpha(hex, alpha) {
   const g = parseInt(raw.slice(2, 4), 16);
   const b = parseInt(raw.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function setTokscaleMessage(text = '', tone = '') {
+  if (!els.tokscaleMessage) return;
+  els.tokscaleMessage.textContent = text;
+  els.tokscaleMessage.classList.toggle('error', tone === 'error');
+  els.tokscaleMessage.classList.toggle('success', tone === 'success');
+}
+
+function mergeTokscalePayload(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  if (payload.status) state.tokscaleStatus = payload.status;
+  else if (payload.supported === false) state.tokscaleStatus = { supported: false };
+  else if (payload.current || payload.bundled || payload.downloaded) {
+    state.tokscaleStatus = {
+      ...(state.tokscaleStatus || { supported: true }),
+      supported: payload.supported !== false,
+      current: payload.current ?? state.tokscaleStatus?.current ?? null,
+      bundled: payload.bundled ?? state.tokscaleStatus?.bundled ?? null,
+      downloaded: payload.downloaded ?? state.tokscaleStatus?.downloaded ?? null
+    };
+  }
+  if (payload.npm || payload.checkedAt) {
+    state.tokscaleCheck = {
+      newer: Boolean(payload.newer),
+      npm: payload.npm || state.tokscaleCheck?.npm || null,
+      checkedAt: payload.checkedAt || state.tokscaleCheck?.checkedAt || null
+    };
+  }
+  if (payload.downloaded === true && state.tokscaleCheck?.npm?.version === payload.version) {
+    state.tokscaleCheck = { ...state.tokscaleCheck, newer: false };
+  }
+}
+
+function renderTokscaleStatus() {
+  if (!els.tokscaleGroup) return;
+  const status = state.tokscaleStatus;
+  if (status?.supported === false) {
+    els.tokscaleGroup.classList.add('hidden');
+    return;
+  }
+  els.tokscaleGroup.classList.remove('hidden');
+  const current = status?.current;
+  const source = current?.source === 'downloaded'
+    ? `downloaded from npm${current.installedAt ? `, ${compactAge(current.installedAt)}` : ''}`
+    : 'bundled with this app';
+  els.tokscaleInstalled.textContent = current ? `${versionText(current.version)} (${source})` : 'Not found';
+  els.tokscaleBundledLine.classList.toggle('hidden', !status?.downloaded || !status?.bundled);
+  els.tokscaleBundled.textContent = status?.bundled ? versionText(status.bundled.version) : '—';
+  if (state.tokscaleCheck?.npm?.version) {
+    els.tokscaleNpm.textContent = `${versionText(state.tokscaleCheck.npm.version)}${state.tokscaleCheck.newer ? '' : ' (current)'}`;
+  } else {
+    els.tokscaleNpm.textContent = 'Not checked';
+  }
+  els.checkTokscaleButton.disabled = state.tokscaleBusy;
+  els.downloadTokscaleButton.disabled = state.tokscaleBusy;
+  els.resetTokscaleButton.disabled = state.tokscaleBusy;
+  els.downloadTokscaleButton.classList.toggle('hidden', !state.tokscaleCheck?.newer);
+  els.resetTokscaleButton.classList.toggle('hidden', !status?.downloaded);
+}
+
+async function refreshTokscaleStatus() {
+  if (!window.tokenMonitor.getTokscaleStatus) return;
+  try {
+    state.tokscaleStatus = await window.tokenMonitor.getTokscaleStatus();
+    renderTokscaleStatus();
+  } catch (error) {
+    setTokscaleMessage(error.message, 'error');
+  }
+}
+
+async function checkTokscaleNpm() {
+  state.tokscaleBusy = true;
+  setTokscaleMessage('Checking npm…');
+  renderTokscaleStatus();
+  try {
+    const result = await window.tokenMonitor.checkTokscaleNpm();
+    if (result?.error) throw new Error(result.error);
+    mergeTokscalePayload(result);
+    if (state.tokscaleStatus?.supported === false) return;
+    setTokscaleMessage(state.tokscaleCheck?.newer ? 'Newer tokscale is on npm.' : 'Bundled tokscale is current.');
+  } catch (error) {
+    setTokscaleMessage(error.message, 'error');
+  } finally {
+    state.tokscaleBusy = false;
+    renderTokscaleStatus();
+  }
+}
+
+async function downloadTokscaleFromNpm() {
+  state.tokscaleBusy = true;
+  setTokscaleMessage('Downloading from npm…');
+  renderTokscaleStatus();
+  try {
+    const result = await window.tokenMonitor.downloadTokscaleFromNpm();
+    if (result?.error) throw new Error(result.error);
+    mergeTokscalePayload(result);
+    setTokscaleMessage(`Downloaded ${versionText(result.version)} from npm.`, 'success');
+  } catch (error) {
+    setTokscaleMessage(error.message, 'error');
+  } finally {
+    state.tokscaleBusy = false;
+    renderTokscaleStatus();
+  }
+}
+
+async function resetTokscaleToBundled() {
+  state.tokscaleBusy = true;
+  setTokscaleMessage('Resetting…');
+  renderTokscaleStatus();
+  try {
+    state.tokscaleStatus = await window.tokenMonitor.resetTokscaleToBundled();
+    state.tokscaleCheck = null;
+    setTokscaleMessage('Using bundled tokscale.', 'success');
+  } catch (error) {
+    setTokscaleMessage(error.message, 'error');
+  } finally {
+    state.tokscaleBusy = false;
+    renderTokscaleStatus();
+  }
 }
 function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
 
@@ -521,6 +663,13 @@ function syncSettingsForm() {
   els.discordRpcInput.checked = Boolean(state.settings.discordRpcEnabled);
   els.trayModeInput.checked = Boolean(state.settings.trayMode);
   els.trayContentInput.value = ['cost', 'tokens', 'tokensAll', 'both', 'limit', 'bars', 'barsSession', 'icon'].includes(state.settings.trayContent) ? state.settings.trayContent : 'cost';
+  els.startupGroup?.classList.toggle('hidden', !state.appInfo?.loginItemSupported);
+  if (els.startAtLoginInput) els.startAtLoginInput.checked = Boolean(state.settings.startAtLogin && state.appInfo?.loginItemSupported);
+  if (els.startupNote) {
+    els.startupNote.textContent = state.appInfo?.loginItemSupported
+      ? 'Launch Token Monitor when you sign in.'
+      : 'Available in packaged macOS and Windows builds.';
+  }
   els.glassInput.value = String(state.settings.glassOpacity ?? 68);
   els.blurInput.value = String(state.settings.glassBlur ?? 32);
   els.zoomInput.value = String(Math.round((Number(state.settings.zoomFactor) || 1) * 100));
@@ -528,6 +677,7 @@ function syncSettingsForm() {
   renderClientCheckboxes();
   renderLimitProviderCheckboxes();
   applyAppearanceSettings(state.settings);
+  renderTokscaleStatus();
   if (state.breakdown === 'limits') renderLimits();
   else render();
 }
@@ -631,8 +781,13 @@ if (typeof ResizeObserver === 'function') {
 }
 
 async function init() {
+  try { state.appInfo = await window.tokenMonitor.getAppInfo?.(); } catch (_) {}
   state.settings = await window.tokenMonitor.getSettings();
+  if (state.appInfo?.loginItemSupported) {
+    state.settings.startAtLogin = Boolean(state.appInfo.loginItemOpenAtLogin);
+  }
   syncSettingsForm();
+  await refreshTokscaleStatus();
   restartTimer();
   try {
     const status = await window.tokenMonitor.getStreamStatus?.();
@@ -700,6 +855,7 @@ els.toolIconsInput.addEventListener('change', saveAppearanceFromControls);
 els.discordRpcInput.addEventListener('change', saveAppearanceFromControls);
 els.trayModeInput.addEventListener('change', () => saveSettings({ trayMode: els.trayModeInput.checked }));
 els.trayContentInput.addEventListener('change', () => saveSettings({ trayContent: els.trayContentInput.value }));
+els.startAtLoginInput?.addEventListener('change', () => saveSettings({ startAtLogin: els.startAtLoginInput.checked }));
 els.glassInput.addEventListener('change', saveAppearanceFromControls);
 els.blurInput.addEventListener('change', saveAppearanceFromControls);
 els.zoomInput.addEventListener('change', saveAppearanceFromControls);
@@ -708,6 +864,10 @@ els.resetZoomButton.addEventListener('click', async () => {
   await saveSettings({ zoomFactor: defaultAppearance.zoomFactor });
 });
 els.openConfigButton.addEventListener('click', () => window.tokenMonitor.openUserData());
+els.checkTokscaleButton?.addEventListener('click', checkTokscaleNpm);
+els.downloadTokscaleButton?.addEventListener('click', downloadTokscaleFromNpm);
+els.resetTokscaleButton?.addEventListener('click', resetTokscaleToBundled);
+els.openTokscaleLinkButton?.addEventListener('click', () => window.tokenMonitor.openExternal?.('https://github.com/junhoyeo/tokscale'));
 els.refreshButton.addEventListener('click', refreshStats);
 els.minButton.addEventListener('click', () => window.tokenMonitor.minimize());
 els.closeButton.addEventListener('click', () => window.tokenMonitor.close());
@@ -717,6 +877,11 @@ window.tokenMonitor.onSettingsPush?.((next) => {
   state.settings = next;
   syncSettingsForm();
   maybeUpdateBarsIcon();
+});
+
+window.tokenMonitor.onTokscalePush?.((payload) => {
+  mergeTokscalePayload(payload);
+  renderTokscaleStatus();
 });
 
 window.tokenMonitor.onStatsPush?.((payload) => {

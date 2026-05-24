@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+    <a href="https://github.com/Javis603/token-monitor/releases"><img src="https://img.shields.io/github/v/release/Javis603/token-monitor?include_prereleases&style=flat-square&label=release&color=22c55e" alt="Latest release" /></a>
     <img src="https://img.shields.io/badge/Windows-10%2B-0078D4?style=flat-square" alt="Windows 10 or later" />
     <img src="https://img.shields.io/badge/macOS-14%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 or later" />
     <img src="https://img.shields.io/badge/iOS-16%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="iOS 16 or later" />
@@ -120,6 +121,17 @@ npx wrangler deploy
 ```
 
 Wrangler prints the deployed URL — paste it into each device's widget at Settings → Multi-device Sync. See [worker/README.md](worker/README.md) for full deploy notes, the iOS widget recipe, and endpoint reference.
+
+## Desktop installer
+
+You can download the app from the [releases page](https://github.com/Javis603/token-monitor/releases). All releases are unsigned; release notes include first-launch unlock steps for macOS (arm64) and Windows (x64). Other platforms run from source via `npm start`.
+
+App state lives in the OS user-data dir — delete it along with the app to fully uninstall.
+
+| Platform | Path |
+|----------|------|
+| macOS | `~/Library/Application Support/Token Monitor/` |
+| Windows | `%APPDATA%/Token Monitor/` |
 
 ## How it works
 

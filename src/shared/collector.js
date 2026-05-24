@@ -5,34 +5,87 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const chokidar = require('chokidar');
+const semver = require('semver');
+const { readJson, sharedDataDir } = require('./config');
+const { tokscalePackageNameForPlatform, tokscalePlatformKey } = require('./tokscalePlatform');
 const { extractUsageFromTokscale } = require('./usage');
 const { collectLimitsOnce, createLimitsCollector } = require('./limitCollector');
 
-const TOKSCALE_BIN_JS = require.resolve('tokscale/bin.js');
+function toUnpackedPath(p) {
+  // electron-builder asarUnpack stores real files at .../app.asar.unpacked/...
+  // require.resolve() returns the .../app.asar/... path, which spawn() can't read.
+  const asarSeg = `${path.sep}app.asar${path.sep}`;
+  return p && p.includes(asarSeg) ? p.replace(asarSeg, `${path.sep}app.asar.unpacked${path.sep}`) : p;
+}
 
-function resolvePlatformBinary() {
-  const binaryName = process.platform === 'win32' ? 'tokscale.exe' : 'tokscale';
-  const candidates = [];
-  if (process.platform === 'darwin') {
-    if (process.arch === 'arm64') candidates.push('@tokscale/cli-darwin-arm64');
-    if (process.arch === 'x64') candidates.push('@tokscale/cli-darwin-x64');
-  } else if (process.platform === 'win32') {
-    if (process.arch === 'arm64') candidates.push('@tokscale/cli-win32-arm64-msvc');
-    if (process.arch === 'x64') candidates.push('@tokscale/cli-win32-x64-msvc');
-  } else if (process.platform === 'linux') {
-    if (process.arch === 'arm64') candidates.push('@tokscale/cli-linux-arm64-gnu', '@tokscale/cli-linux-arm64-musl');
-    if (process.arch === 'x64') candidates.push('@tokscale/cli-linux-x64-gnu', '@tokscale/cli-linux-x64-musl');
+const TOKSCALE_BIN_JS = toUnpackedPath(require.resolve('tokscale/bin.js'));
+
+function tokscaleBinaryName(platform = process.platform) {
+  return platform === 'win32' ? 'tokscale.exe' : 'tokscale';
+}
+
+function bundledPackageCandidates() {
+  const primary = tokscalePackageNameForPlatform();
+  if (primary) return [primary];
+  if (process.platform === 'linux') {
+    if (process.arch === 'arm64') return ['@tokscale/cli-linux-arm64-gnu', '@tokscale/cli-linux-arm64-musl'];
+    if (process.arch === 'x64') return ['@tokscale/cli-linux-x64-gnu', '@tokscale/cli-linux-x64-musl'];
   }
-  for (const pkg of candidates) {
+  return [];
+}
+
+function locateBundledBinary() {
+  const binaryName = process.platform === 'win32' ? 'tokscale.exe' : 'tokscale';
+  for (const pkg of bundledPackageCandidates()) {
     try {
       const pkgPath = require.resolve(`${pkg}/package.json`);
-      const binPath = path.join(path.dirname(pkgPath), 'bin', binaryName);
-      if (fs.existsSync(binPath)) return binPath;
+      const binPath = toUnpackedPath(path.join(path.dirname(pkgPath), 'bin', binaryName));
+      const pkgJson = readJson(pkgPath, {});
+      if (fs.existsSync(binPath)) {
+        return { source: 'bundled', path: binPath, version: String(pkgJson.version || '0.0.0'), packageName: pkg };
+      }
     } catch (_) {}
   }
   return null;
 }
-const TOKSCALE_PLATFORM_BIN = resolvePlatformBinary();
+
+function readDownloadedPointer() {
+  const currentPath = path.join(sharedDataDir(), 'tokscale', 'current.json');
+  const current = readJson(currentPath, null);
+  if (!current || typeof current !== 'object') return null;
+  if (current.platform && current.platform !== tokscalePlatformKey()) return null;
+  if (!semver.valid(current.version)) return null;
+  if (typeof current.path !== 'string' || !path.isAbsolute(current.path)) return null;
+  try {
+    const stat = fs.statSync(current.path);
+    if (!stat.isFile()) return null;
+    if (process.platform !== 'win32' && (stat.mode & 0o111) === 0) return null;
+  } catch (_) {
+    return null;
+  }
+  return {
+    source: 'downloaded',
+    path: current.path,
+    version: current.version,
+    installedAt: current.installedAt || '',
+    integrity: current.integrity || ''
+  };
+}
+
+function decideResolver({ downloaded, bundled, shim }) {
+  if (downloaded && !bundled) return downloaded;
+  if (downloaded && bundled && semver.valid(downloaded.version) && semver.valid(bundled.version) && semver.gt(downloaded.version, bundled.version)) {
+    return downloaded;
+  }
+  return bundled || shim || null;
+}
+
+function resolvePlatformBinary() {
+  const bundled = locateBundledBinary();
+  const downloaded = readDownloadedPointer();
+  const shim = { source: 'shim', path: TOKSCALE_BIN_JS, version: null };
+  return decideResolver({ downloaded, bundled, shim });
+}
 
 function parseJsonOutput(stdout) {
   const text = String(stdout || '').trim();
@@ -48,8 +101,9 @@ function parseJsonOutput(stdout) {
 
 function runTokscale({ clients, flags, commandTimeoutMs }) {
   const userArgs = ['--json', '--client', clients, '--group-by', 'client,model', ...flags];
-  const useDirect = Boolean(TOKSCALE_PLATFORM_BIN);
-  const bin = useDirect ? TOKSCALE_PLATFORM_BIN : process.execPath;
+  const resolved = resolvePlatformBinary();
+  const useDirect = Boolean(resolved && resolved.source !== 'shim');
+  const bin = useDirect ? resolved.path : process.execPath;
   const args = useDirect ? userArgs : [TOKSCALE_BIN_JS, ...userArgs];
   const spawnOpts = useDirect
     ? { windowsHide: true }
@@ -220,4 +274,12 @@ function startCollector(options) {
   return { stop, tick: (reason = 'manual') => runTick(reason) };
 }
 
-module.exports = { collectUsageOnce, startCollector, watchPathsForClients };
+module.exports = {
+  collectUsageOnce,
+  decideResolver,
+  locateBundledBinary,
+  readDownloadedPointer,
+  resolvePlatformBinary,
+  startCollector,
+  watchPathsForClients
+};

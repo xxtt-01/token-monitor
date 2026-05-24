@@ -3,14 +3,21 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, nativeImage, screen, shell } = require('electron');
-const { defaultDeviceId, loadDotEnv, pidFilePath } = require('../shared/config');
+const { defaultDeviceId, loadDotEnv, pidFilePath, sharedDataDir } = require('../shared/config');
 const { startCollector } = require('../shared/collector');
 const { normalizeLimitsRefreshMs, parseBoolean, parseLimitProviders } = require('../shared/limitCollector');
+const {
+  checkNpmForNewer,
+  cleanupStaleStaging,
+  downloadFromNpm,
+  getTokscaleStatus,
+  resetToBundled
+} = require('../shared/tokscaleUpdater');
 const { aggregateDevices } = require('../shared/usage');
 const { startDiscordRpc, stopDiscordRpc, updateDiscordRpc } = require('./discordRpc');
 const { buildTrayIcon, createTray, formatTrayText, pickWorstLimit, popoverBounds } = require('./tray');
 
-loadDotEnv();
+if (!app.isPackaged) loadDotEnv();
 
 const APP_NAME = 'Token Monitor';
 const APP_ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -26,6 +33,9 @@ let settings = null;
 
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId('com.javis.tokenmonitor');
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.exit(0);
 
 function defaultSettings() {
   return {
@@ -50,7 +60,8 @@ function defaultSettings() {
     windowBounds: null,
     zoomFactor: 1,
     trayMode: false,
-    trayContent: 'cost'
+    trayContent: 'cost',
+    startAtLogin: false
   };
 }
 
@@ -148,6 +159,41 @@ function saveSettings() {
   fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
 }
 
+function loginItemEnabledHere() {
+  return app.isPackaged && process.platform !== 'linux';
+}
+
+function currentLoginItemState() {
+  if (!loginItemEnabledHere()) return false;
+  try { return Boolean(app.getLoginItemSettings().openAtLogin); }
+  catch (_) { return false; }
+}
+
+function applyLoginItem(startAtLogin) {
+  if (!loginItemEnabledHere()) return false;
+  app.setLoginItemSettings({ openAtLogin: Boolean(startAtLogin) });
+  return currentLoginItemState();
+}
+
+function syncLoginItemSettingFromOs() {
+  if (!settings) return;
+  const actual = currentLoginItemState();
+  if (settings.startAtLogin === actual) return;
+  settings.startAtLogin = actual;
+  saveSettings();
+}
+
+function applyMacActivationPolicy() {
+  if (process.platform !== 'darwin') return;
+  const trayMode = Boolean(settings?.trayMode);
+  if (typeof app.setActivationPolicy === 'function') {
+    try { app.setActivationPolicy(trayMode ? 'accessory' : 'regular'); } catch (_) {}
+  }
+  if (!app.dock) return;
+  if (trayMode) app.dock.hide();
+  else app.dock.show();
+}
+
 function applyWindowSettings() {
   if (mainWindow) mainWindow.setAlwaysOnTop(Boolean(settings.alwaysOnTop), 'floating');
 }
@@ -191,6 +237,8 @@ let latestStats = null;
 let suppressNextBlurHide = false;
 const providerTrayIcons = {};
 let defaultTrayIcon = null;
+let tokScaleNpmMetadata = null;
+let tokScaleUpdaterBusy = false;
 function getDefaultTrayIcon() {
   if (!defaultTrayIcon) defaultTrayIcon = buildTrayIcon();
   return defaultTrayIcon;
@@ -410,6 +458,7 @@ async function startStatsStream() {
 
 function showPopover() {
   if (!mainWindow || mainWindow.isDestroyed() || !tray) return;
+  applyMacActivationPolicy();
   const current = mainWindow.getBounds();
   const target = popoverBounds(tray, current.width, current.height);
   mainWindow.setBounds(target);
@@ -433,8 +482,19 @@ function togglePopover() {
   else showPopover();
 }
 
+function focusExistingWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (settings?.trayMode) showPopover();
+  else {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
 function enterTrayMode() {
   if (tray && !tray.isDestroyed()) return;
+  applyMacActivationPolicy();
   tray = createTray({
     onToggle: togglePopover,
     onQuit: requestAppQuit,
@@ -448,7 +508,7 @@ function enterTrayMode() {
     }
   });
   updateTrayDisplay();
-  if (process.platform === 'darwin' && app.dock) app.dock.hide();
+  applyMacActivationPolicy();
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (typeof mainWindow.setSkipTaskbar === 'function') mainWindow.setSkipTaskbar(true);
     // Without this, .show() yanks the user back to the Space the window was last
@@ -463,7 +523,7 @@ function enterTrayMode() {
 function exitTrayMode() {
   if (tray && !tray.isDestroyed()) tray.destroy();
   tray = null;
-  if (process.platform === 'darwin' && app.dock) app.dock.show();
+  applyMacActivationPolicy();
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (typeof mainWindow.setSkipTaskbar === 'function') mainWindow.setSkipTaskbar(false);
     if (typeof mainWindow.setVisibleOnAllWorkspaces === 'function') {
@@ -520,6 +580,63 @@ async function fetchStats() {
   const response = await fetch(url, { headers: settings.secret ? { authorization: `Bearer ${settings.secret}` } : {} });
   if (!response.ok) throw new Error(`Hub ${response.status}: ${(await response.text()).slice(0, 200)}`);
   return response.json();
+}
+
+function stripTokscaleMetadata(result) {
+  if (!result || typeof result !== 'object') return result;
+  const { metadata: _metadata, ...publicResult } = result;
+  return publicResult;
+}
+
+function sendTokscalePush(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.webContents.send('tokscale:push', payload); } catch (_) {}
+}
+
+async function checkTokscaleNpm({ silent = false } = {}) {
+  try {
+    const result = await checkNpmForNewer(app.getVersion());
+    if (result.metadata) tokScaleNpmMetadata = result.metadata;
+    const publicResult = stripTokscaleMetadata(result);
+    sendTokscalePush({ type: 'check', ...publicResult });
+    return publicResult;
+  } catch (error) {
+    if (silent) {
+      console.log(`[tokscale] npm check failed: ${error.message}`);
+      return { supported: true, error: null, silent: true };
+    }
+    return { supported: true, error: error.message };
+  }
+}
+
+async function downloadTokscaleFromNpm() {
+  if (tokScaleUpdaterBusy) return { supported: true, busy: true };
+  tokScaleUpdaterBusy = true;
+  try {
+    if (!tokScaleNpmMetadata) {
+      const checked = await checkNpmForNewer(app.getVersion());
+      if (!checked.supported) return { supported: false };
+      tokScaleNpmMetadata = checked.metadata;
+    }
+    const result = await downloadFromNpm(tokScaleNpmMetadata);
+    const publicResult = stripTokscaleMetadata(result);
+    sendTokscalePush({ type: 'download', ...publicResult });
+    return publicResult;
+  } catch (error) {
+    return { supported: true, error: error.message };
+  } finally {
+    tokScaleUpdaterBusy = false;
+  }
+}
+
+function isAllowedExternalUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || '')); }
+  catch (_) { return false; }
+  if (parsed.protocol !== 'https:') return false;
+  if (parsed.hostname === 'github.com' && parsed.pathname.startsWith('/junhoyeo/tokscale')) return true;
+  if (parsed.hostname === 'www.npmjs.com' && parsed.pathname.startsWith('/package/@tokscale/')) return true;
+  return false;
 }
 
 function revealWindow(target = mainWindow) {
@@ -625,10 +742,15 @@ function rebuildWindow() {
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && app.dock) app.dock.setIcon(APP_ICON_PATH);
+  if (!settings) settings = readSettings();
+  applyMacActivationPolicy();
   createWindow();
+  syncLoginItemSettingFromOs();
+  cleanupStaleStaging().catch((error) => console.log(`[tokscale] staging cleanup failed: ${error.message}`));
   if (settings.trayMode) enterTrayMode();
   startMode();
   if (settings.discordRpcEnabled) startDiscordRpc();
+  setTimeout(() => { checkTokscaleNpm({ silent: true }); }, 2000);
   ipcMain.handle('settings:get', () => settings);
   ipcMain.handle('settings:update', (_event, patch) => {
     const previousSystemGlass = settings.systemGlass;
@@ -642,6 +764,7 @@ app.whenReady().then(() => {
     const previousDiscordRpcEnabled = settings.discordRpcEnabled;
     const previousTrayMode = settings.trayMode;
     const previousTrayContent = settings.trayContent;
+    const previousStartAtLogin = settings.startAtLogin;
     settings = {
       ...settings,
       ...patch,
@@ -659,9 +782,14 @@ app.whenReady().then(() => {
       showLimitSource: parseBoolean(patch.showLimitSource ?? settings.showLimitSource, false),
       zoomFactor: clampZoom(patch.zoomFactor ?? settings.zoomFactor),
       trayMode: parseBoolean(patch.trayMode ?? settings.trayMode, false),
-      trayContent: normalizeTrayContent(patch.trayContent ?? settings.trayContent)
+      trayContent: normalizeTrayContent(patch.trayContent ?? settings.trayContent),
+      startAtLogin: loginItemEnabledHere() ? parseBoolean(patch.startAtLogin ?? settings.startAtLogin, false) : false
     };
     saveSettings();
+    if (settings.startAtLogin !== previousStartAtLogin) {
+      settings.startAtLogin = applyLoginItem(settings.startAtLogin);
+      saveSettings();
+    }
     if (patch.zoomFactor !== undefined) applyZoomFactor();
     if (settings.discordRpcEnabled && !previousDiscordRpcEnabled) startDiscordRpc();
     else if (!settings.discordRpcEnabled && previousDiscordRpcEnabled) stopDiscordRpc();
@@ -714,7 +842,32 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('stats:get', () => fetchStats());
   ipcMain.handle('stream:status', () => ({ connected: streamConnected, mode }));
+  ipcMain.handle('app:getInfo', () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    isPackaged: app.isPackaged,
+    userData: app.getPath('userData'),
+    sharedDataDir: sharedDataDir(),
+    loginItemSupported: loginItemEnabledHere(),
+    loginItemOpenAtLogin: currentLoginItemState()
+  }));
+  ipcMain.handle('app:openExternal', (_event, url) => {
+    if (!isAllowedExternalUrl(url)) return { ok: false, error: 'url not in allowlist' };
+    return shell.openExternal(url)
+      .then(() => ({ ok: true }))
+      .catch((error) => ({ ok: false, error: error.message }));
+  });
   ipcMain.handle('app:openUserData', () => shell.openPath(app.getPath('userData')));
+  ipcMain.handle('tokscale:getStatus', () => getTokscaleStatus());
+  ipcMain.handle('tokscale:checkNpm', () => checkTokscaleNpm());
+  ipcMain.handle('tokscale:downloadFromNpm', () => downloadTokscaleFromNpm());
+  ipcMain.handle('tokscale:resetToBundled', async () => {
+    tokScaleNpmMetadata = null;
+    const status = await resetToBundled();
+    sendTokscalePush({ type: 'reset', status });
+    return status;
+  });
   ipcMain.on('window:minimize', () => {
     if (settings?.trayMode) hidePopover();
     else mainWindow?.minimize();
@@ -726,6 +879,7 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
+app.on('second-instance', focusExistingWindow);
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('before-quit', () => { quitRequested = true; stopAll(); });
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {

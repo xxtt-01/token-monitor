@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+    <a href="https://github.com/Javis603/token-monitor/releases"><img src="https://img.shields.io/github/v/release/Javis603/token-monitor?include_prereleases&style=flat-square&label=release&color=22c55e" alt="最新發布" /></a>
     <img src="https://img.shields.io/badge/Windows-10%2B-0078D4?style=flat-square" alt="Windows 10 或更新" />
     <img src="https://img.shields.io/badge/macOS-14%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="macOS 14 或更新" />
     <img src="https://img.shields.io/badge/iOS-16%2B-0A84FF?style=flat-square&logo=apple&logoColor=white" alt="iOS 16 或更新" />
@@ -120,6 +121,17 @@ npx wrangler deploy
 ```
 
 Wrangler 會印出部署的 URL——把它貼到每台裝置的小工具 設定 → 多裝置同步。完整部署說明、iOS 小工具設定步驟與端點參考請見 [worker/README.md](worker/README.md)。
+
+## 桌面安裝檔
+
+你可以從 [release 頁面](https://github.com/Javis603/token-monitor/releases) 下載 App。所有 release 都未簽章，發布說明含 macOS（arm64）與 Windows（x64）的首次啟動解鎖步驟。其他平台請從原始碼 `npm start` 啟動。
+
+App 狀態存在 OS 使用者資料目錄——解除安裝時一併刪除該資料夾即可完整移除。
+
+| 平台 | 路徑 |
+|------|------|
+| macOS | `~/Library/Application Support/Token Monitor/` |
+| Windows | `%APPDATA%/Token Monitor/` |
 
 ## 運作原理
 

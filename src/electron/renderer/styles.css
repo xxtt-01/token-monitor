@@ -240,9 +240,51 @@ input, textarea, [contenteditable="true"] {
   accent-color: var(--green);
 }
 .settings-group { display: grid; gap: 8px; }
+.settings-group.hidden, .settings-actions button.hidden { display: none; }
 .settings-group-header { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.settings-group-header span:last-child:not(:first-child) { font-size: 9px; opacity: 0.72; }
 .settings-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .settings-note code { padding: 1px 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.06); font-size: 10px; }
+.inline-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: inherit;
+}
+.inline-link:hover { color: var(--text); }
+.tokscale-lines {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.tokscale-lines > div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 10px;
+}
+.tokscale-lines > div.hidden { display: none; }
+.tokscale-lines strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tokscale-lines small { color: var(--muted); font-size: 9px; }
+.tokscale-message {
+  min-height: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.tokscale-message.error { color: var(--red); }
+.tokscale-message.success { color: var(--green); }
 .settings-panel .client-checkboxes {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -8,6 +8,17 @@ function projectRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
+function sharedDataDir(options = {}) {
+  const env = options.env || process.env;
+  if (env.TOKEN_MONITOR_SHARED_DIR) return env.TOKEN_MONITOR_SHARED_DIR;
+  const platform = options.platform || process.platform;
+  const homeDir = options.homeDir || os.homedir();
+  const productName = 'Token Monitor';
+  if (platform === 'darwin') return path.join(homeDir, 'Library', 'Application Support', productName);
+  if (platform === 'win32') return path.join(env.APPDATA || path.join(homeDir, 'AppData', 'Roaming'), productName);
+  return path.join(env.XDG_CONFIG_HOME || path.join(homeDir, '.config'), productName);
+}
+
 function parseArgs(argv) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -63,7 +74,7 @@ function defaultDeviceId() {
 }
 
 function pidFilePath() {
-  return path.join(projectRoot(), 'data', 'agent.pid');
+  return path.join(sharedDataDir(), 'agent.pid');
 }
 
-module.exports = { defaultDeviceId, loadDotEnv, parseArgs, pidFilePath, projectRoot, readJson, writeJsonAtomic };
+module.exports = { defaultDeviceId, loadDotEnv, parseArgs, pidFilePath, projectRoot, readJson, sharedDataDir, writeJsonAtomic };

@@ -76,6 +76,11 @@
             </select>
           </label>
         </div>
+        <div id="startupGroup" class="settings-group">
+          <div class="settings-group-header"><span>Startup</span></div>
+          <label class="checkbox-label"><input id="startAtLoginInput" type="checkbox" />Start at login</label>
+          <p id="startupNote" class="settings-note">Available in packaged macOS and Windows builds.</p>
+        </div>
         <div class="settings-group">
           <div class="settings-group-header"><span>Appearance</span></div>
           <label class="checkbox-label"><input id="systemGlassInput" type="checkbox" />System Glass</label>
@@ -88,6 +93,21 @@
         <div class="settings-group">
           <div class="settings-group-header"><span>Integrations</span></div>
           <label class="checkbox-label"><input id="discordRpcInput" type="checkbox" />Discord Rich Presence</label>
+        </div>
+        <div id="tokscaleGroup" class="settings-group">
+          <div class="settings-group-header"><span>Tokscale</span><span>CLI dependency from npm</span></div>
+          <div class="tokscale-lines">
+            <div><span>Installed</span><strong id="tokscaleInstalled">Checking…</strong></div>
+            <div id="tokscaleBundledLine"><span>Bundled</span><strong id="tokscaleBundled">—</strong></div>
+            <div><span>On npm <small>(latest tag)</small></span><strong id="tokscaleNpm">Not checked</strong></div>
+          </div>
+          <p class="settings-note">Token Monitor uses tokscale (MIT, open-source) to read token data. <button id="openTokscaleLinkButton" type="button" class="inline-link">Learn more</button></p>
+          <div id="tokscaleMessage" class="tokscale-message"></div>
+          <div class="settings-actions">
+            <button id="checkTokscaleButton" type="button">Check npm</button>
+            <button id="downloadTokscaleButton" type="button" class="hidden">Download from npm</button>
+            <button id="resetTokscaleButton" type="button" class="hidden">Reset to bundled</button>
+          </div>
         </div>
         <div class="settings-group">
           <div class="settings-group-header"><span>Advanced</span></div>

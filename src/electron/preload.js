@@ -18,7 +18,18 @@ contextBridge.exposeInMainWorld('tokenMonitor', {
     ipcRenderer.on('settings:push', listener);
     return () => ipcRenderer.removeListener('settings:push', listener);
   },
+  onTokscalePush: (callback) => {
+    const listener = (_event, payload) => { try { callback(payload); } catch (_) {} };
+    ipcRenderer.on('tokscale:push', listener);
+    return () => ipcRenderer.removeListener('tokscale:push', listener);
+  },
+  getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   openUserData: () => ipcRenderer.invoke('app:openUserData'),
+  getTokscaleStatus: () => ipcRenderer.invoke('tokscale:getStatus'),
+  checkTokscaleNpm: () => ipcRenderer.invoke('tokscale:checkNpm'),
+  downloadTokscaleFromNpm: () => ipcRenderer.invoke('tokscale:downloadFromNpm'),
+  resetTokscaleToBundled: () => ipcRenderer.invoke('tokscale:resetToBundled'),
   setTrayIcons: (icons) => ipcRenderer.invoke('tray:setIcons', icons),
   minimize: () => ipcRenderer.send('window:minimize'),
   close: () => ipcRenderer.send('window:close')
