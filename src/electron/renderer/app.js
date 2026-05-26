@@ -1212,9 +1212,13 @@ function renderBarsIcon(stats, height = 44, picker = pickWorstProvider) {
     ctx.fill();
     const fillW = trayBarFillWidth(percent, layout.barsWidth);
     if (!fillW) return;
-    roundedRectPath(ctx, layout.barsX, y, fillW, layout.barHeight, layout.radius);
+    // Clip-to-track + flat fillRect: a rounded rect's tiny corners get lost when the icon is downscaled into the menubar.
+    ctx.save();
+    roundedRectPath(ctx, layout.barsX, y, layout.barsWidth, layout.barHeight, layout.radius);
+    ctx.clip();
     ctx.fillStyle = 'rgba(0, 0, 0, 1)';
-    ctx.fill();
+    ctx.fillRect(layout.barsX, y, fillW, layout.barHeight);
+    ctx.restore();
   }
 
   drawBar(layout.barsStartY, Number(session?.remainingPercent));
@@ -1260,9 +1264,12 @@ function renderAllSessionsIcon(stats, height = 44, configOrder) {
     ctx.fill();
     const fillW = trayBarFillWidth(percent, layout.barsWidth);
     if (!fillW) return;
-    roundedRectPath(ctx, layout.barsX, y, fillW, layout.barHeight, layout.radius);
+    ctx.save();
+    roundedRectPath(ctx, layout.barsX, y, layout.barsWidth, layout.barHeight, layout.radius);
+    ctx.clip();
     ctx.fillStyle = 'rgba(0, 0, 0, 1)';
-    ctx.fill();
+    ctx.fillRect(layout.barsX, y, fillW, layout.barHeight);
+    ctx.restore();
   }
 
   drawBar(layout.barsStartY, Number(picks[0].session.remainingPercent));
