@@ -1494,7 +1494,7 @@ function imageToPngDataUrl(img, size) {
 
 async function deliverTrayProviderIcons() {
   if (!window.tokenMonitor.setTrayIcons) return;
-  const sources = { claude: '../../../assets/icons/tray-claude.svg', codex: '../../../assets/icons/tray-codex.svg' };
+  const sources = window.TokenMonitorTrayProviderIcons.trayProviderIconSources(clientsWithIcon);
   const icons = {};
   for (const [id, path] of Object.entries(sources)) {
     try {

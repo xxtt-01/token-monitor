@@ -40,6 +40,38 @@ function pickWorstLimit(stats) {
   return worst;
 }
 
+function trayUsagePeriod(contentMode) {
+  if (contentMode === 'tokensAll' || contentMode === 'costAll' || contentMode === 'bothAll') return 'allTime';
+  if (contentMode === 'tokens' || contentMode === 'cost' || contentMode === 'both') return 'today';
+  return null;
+}
+
+function topClientFromMetric(values) {
+  let top = null;
+  let topValue = 0;
+  for (const [client, rawValue] of Object.entries(values || {})) {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    if (!top || value > topValue) {
+      top = client;
+      topValue = value;
+    }
+  }
+  return top;
+}
+
+function pickUsageTrayIconId(stats, contentMode = 'tokens', availableIconIds = []) {
+  const periodKey = trayUsagePeriod(contentMode);
+  if (!periodKey) return null;
+  const period = stats?.periods?.[periodKey] || {};
+  const costMode = contentMode === 'cost' || contentMode === 'costAll';
+  const costClient = costMode ? topClientFromMetric(period.clientCosts) : null;
+  const client = costClient || topClientFromMetric(period.clients);
+  if (!client) return null;
+  const available = new Set(availableIconIds);
+  return available.has(client) ? client : null;
+}
+
 function formatTrayText(stats, contentMode = 'tokens') {
   if (contentMode === 'icon') return '';
   if (contentMode === 'bars' || contentMode === 'barsSession' || contentMode === 'barsWeekly' || contentMode === 'barsAllSessions') {
@@ -100,4 +132,4 @@ function popoverBounds(tray, popoverWidth, popoverHeight) {
   return { x, y, width: popoverWidth, height: popoverHeight };
 }
 
-module.exports = { createTray, formatTrayText, popoverBounds, pickWorstLimit, buildTrayIcon };
+module.exports = { createTray, formatTrayText, popoverBounds, pickWorstLimit, pickUsageTrayIconId, buildTrayIcon };

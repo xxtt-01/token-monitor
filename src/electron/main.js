@@ -20,7 +20,7 @@ const cursorProbe = require('../shared/cursorProbe');
 const semver = require('semver');
 const { aggregateDevices } = require('../shared/usage');
 const { startDiscordRpc, stopDiscordRpc, updateDiscordRpc } = require('./discordRpc');
-const { buildTrayIcon, createTray, formatTrayText, popoverBounds } = require('./tray');
+const { buildTrayIcon, createTray, formatTrayText, pickUsageTrayIconId, popoverBounds } = require('./tray');
 const { describeWindowBehavior, normalizeWindowBehaviorSettings } = require('./windowBehavior');
 
 if (!app.isPackaged) loadDotEnv();
@@ -529,6 +529,9 @@ function updateTrayDisplay() {
   let icon = null;
   if ((mode === 'bars' || mode === 'barsSession' || mode === 'barsWeekly' || mode === 'barsAllSessions') && providerTrayIcons[mode]) {
     icon = providerTrayIcons[mode];
+  } else {
+    const usageIconId = pickUsageTrayIconId(latestStats, mode, Object.keys(providerTrayIcons));
+    if (usageIconId) icon = providerTrayIcons[usageIconId];
   }
   tray.setImage(icon || getDefaultTrayIcon());
 }
