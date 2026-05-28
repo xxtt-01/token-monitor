@@ -78,7 +78,7 @@ const deviceAccent = '#73bdf5';
 const deviceStaleColor = '#8c97a7';
 const fallbackModelColors = ['#6ab4f0', '#cc7c5e', '#a57df0', '#49a3b0', '#f0d66a', '#f06a7b'];
 const baseBreakdownOrder = ['tool', 'device', 'model'];
-const state = { period: 'today', appUpdate: null, breakdown: 'tool', settings: null, stats: null, refreshTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false, hubInfo: null, cursorAccount: { status: null, error: '' } };
+const state = { period: 'today', appUpdate: null, breakdown: 'tool', settings: null, stats: null, refreshTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false, hubInfo: null, cursorAccount: { status: null, error: '' }, cursorAccountExpanded: false };
 const defaultAppearance = { glassOpacity: 68, glassBlur: 32, zoomFactor: 1, systemGlass: true, showLiveDot: true, showToolIcons: true, titleIconOnly: false };
 const els = {
   shell: document.querySelector('.shell'), status: document.getElementById('status'), liveDot: document.getElementById('liveDot'), totalTokens: document.getElementById('totalTokens'), cost: document.getElementById('cost'), breakdown: document.getElementById('breakdown'), limitsPanel: document.getElementById('limitsPanel'), breakdownToggle: document.getElementById('breakdownToggle'), pinButton: document.getElementById('pinButton'), settingsButton: document.getElementById('settingsButton'), settingsPanel: document.getElementById('settingsPanel'), languageInput: document.getElementById('languageInput'), hubUrlInput: document.getElementById('hubUrlInput'), secretInput: document.getElementById('secretInput'), deviceIdInput: document.getElementById('deviceIdInput'), limitProviderCheckboxes: document.getElementById('limitProviderCheckboxes'), limitsRefreshInput: document.getElementById('limitsRefreshInput'), showLimitSourceInput: document.getElementById('showLimitSourceInput'), systemGlassInput: document.getElementById('systemGlassInput'), liveDotInput: document.getElementById('liveDotInput'), toolIconsInput: document.getElementById('toolIconsInput'), discordRpcInput: document.getElementById('discordRpcInput'), windowBehaviorInput: document.getElementById('windowBehaviorInput'), trayModeInput: document.getElementById('trayModeInput'), trayContentInput: document.getElementById('trayContentInput'), glassInput: document.getElementById('glassInput'), blurInput: document.getElementById('blurInput'), zoomInput: document.getElementById('zoomInput'), resetGlassButton: document.getElementById('resetGlassButton'), resetDepthButton: document.getElementById('resetDepthButton'), resetZoomButton: document.getElementById('resetZoomButton'), saveSettingsButton: document.getElementById('saveSettingsButton'), clientCheckboxes: document.getElementById('clientCheckboxes'), openConfigButton: document.getElementById('openConfigButton'), refreshButton: document.getElementById('refreshButton'), minButton: document.getElementById('minButton'), closeButton: document.getElementById('closeButton')
@@ -1508,6 +1508,23 @@ async function deliverTrayProviderIcons() {
   maybeUpdateBarsIcon();
 }
 
+function setCursorAccountExpanded(expanded) {
+  const toggle = document.getElementById('cursorSettingsToggle');
+  const details = document.getElementById('cursorSettingsDetails');
+  const group = document.getElementById('cursorAccountGroup');
+  if (!toggle || !details) return;
+  const next = Boolean(expanded);
+  state.cursorAccountExpanded = next;
+  toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+  details.classList.toggle('hidden', !next);
+  if (group) group.classList.toggle('expanded', next);
+}
+
+function setCursorStatusText(el, text) {
+  el.textContent = text;
+  el.title = text;
+}
+
 function renderCursorStatus() {
   const statusEl = document.getElementById('cursorAccountStatus');
   const loginBtn = document.getElementById('cursorLoginButton');
@@ -1521,19 +1538,26 @@ function renderCursorStatus() {
   errorEl.textContent = '';
 
   if (state.cursorAccount.error) {
+    setCursorStatusText(statusEl, t('settings.common.error'));
     errorEl.textContent = t('settings.cursor.statusCheckFailed', { message: state.cursorAccount.error });
     errorEl.classList.remove('hidden');
+    loginBtn.classList.remove('hidden');
+    logoutBtn.classList.add('hidden');
+    refreshBtn.classList.remove('hidden');
+    manualPanel.classList.remove('hidden');
+    setCursorCheckboxesEnabled(false);
+    setCursorAccountExpanded(true);
     return;
   }
 
   const status = state.cursorAccount.status;
   if (!status) {
-    statusEl.textContent = t('settings.common.checking');
+    setCursorStatusText(statusEl, t('settings.common.checking'));
     return;
   }
 
   if (!status.loggedIn) {
-    statusEl.textContent = t('settings.cursor.notLoggedIn');
+    setCursorStatusText(statusEl, t('settings.cursor.notLoggedIn'));
     loginBtn.classList.remove('hidden');
     logoutBtn.classList.add('hidden');
     refreshBtn.classList.add('hidden');
@@ -1542,12 +1566,13 @@ function renderCursorStatus() {
     return;
   }
   if (status.expired) {
-    statusEl.textContent = t('settings.cursor.expired');
+    setCursorStatusText(statusEl, t('settings.cursor.expired'));
     loginBtn.classList.remove('hidden');
     logoutBtn.classList.remove('hidden');
     refreshBtn.classList.remove('hidden');
     manualPanel.classList.remove('hidden');
     setCursorCheckboxesEnabled(false);
+    setCursorAccountExpanded(true);
     return;
   }
   const parts = [];
@@ -1557,7 +1582,7 @@ function renderCursorStatus() {
     const d = new Date(status.billingCycleEnd);
     parts.push(t('settings.cursor.billingResets', { date: d.toLocaleDateString(currentLocale()) }));
   }
-  statusEl.textContent = `✓ ${parts.join(' · ')}`;
+  setCursorStatusText(statusEl, `✓ ${parts.join(' · ')}`);
   loginBtn.classList.add('hidden');
   logoutBtn.classList.remove('hidden');
   refreshBtn.classList.remove('hidden');
@@ -1586,6 +1611,11 @@ function setCursorCheckboxesEnabled(enabled) {
 }
 
 function setupCursorAccountUI() {
+  document.getElementById('cursorSettingsToggle').addEventListener('click', () => {
+    setCursorAccountExpanded(!state.cursorAccountExpanded);
+  });
+  setCursorAccountExpanded(false);
+
   document.getElementById('cursorLoginButton').addEventListener('click', () => {
     window.tokenMonitor.openExternal('https://cursor.com/settings');
   });
@@ -1612,6 +1642,7 @@ function setupCursorAccountUI() {
     }
     input.value = '';
     await refreshCursorStatus();
+    setCursorAccountExpanded(false);
     await refreshStats({ force: true });
   });
 
