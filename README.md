@@ -45,6 +45,7 @@ Most usage monitors are useful on the machine they run on. Token Monitor is buil
 - **AI Tool Limits detection** for Claude Code, Codex, Cursor, and Antigravity with session, weekly, billing, and credits windows
 - **Appearance controls** for glass opacity, blur, and transparent window mode
 - **Menu bar (macOS) and system tray (Windows) popover** with live cost, tokens, or closest Claude/Codex/Cursor/Antigravity limit % next to the icon
+- **Floating Bubble mode** that collapses the widget into a draggable mini-window with click or hover preview and tray-style content
 - **Local-first:** no servers needed for single-device use
 - **Self-hosted sync backend** (in-widget hub, Node CLI hub, or Cloudflare Worker)
 - **iOS widget support** via Widgy and Scriptable through the Worker hub
@@ -153,7 +154,9 @@ Click the `⚙` button in the widget header to open the Settings panel.
 - **Multi-device Sync** — three modes: **Local only** (this device, no hub), **Connect to a hub** (paste another machine's Hub URL + secret), or **Host hub on this device** (open a hub here so other devices can connect; LAN/Tailscale/ZeroTier addresses are listed for you).
 - **Tracked Tools** — checkboxes for each supported AI tool. Toggles take effect immediately and restart the collector with the new client list.
 - **AI Tool Limits** — choose Claude Code, Codex, Cursor, and Antigravity limit detection and refresh frequency.
-- **Display Mode** — switch to a menu bar (macOS) or system tray (Windows) popover instead of the floating window, and choose what shows next to the icon: cost, today's tokens, total tokens, cost + tokens, the closest Claude/Codex/Cursor/Antigravity limit % left, or icon-only.
+- **Window behavior** — choose floating above apps, a normal window, or desktop pinned mode.
+- **Tray Mode** — switch to a menu bar (macOS) or system tray (Windows) popover and choose what shows next to the icon: cost, today's tokens, total tokens, cost + tokens, the closest Claude/Codex/Cursor/Antigravity limit % left, or icon-only.
+- **Floating Bubble** — collapse the widget into a draggable mini-window, reopen it by click or hover preview, and choose bubble content from icon, tokens, cost, or AI Tool Limit bars.
 - **Appearance** — system glass, live dot, tool icons, Discord Rich Presence, glass opacity, and glass blur.
 - **Advanced** — opens the underlying `settings.json` for less-common options like `allTimeSince`.
 
