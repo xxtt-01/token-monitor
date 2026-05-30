@@ -48,6 +48,7 @@ Example payload:
   "platform": "darwin-arm64",
   "updatedAt": "2026-05-18T00:00:00.000Z",
   "agentVersion": "0.1.0",
+  "trackedClients": ["codex"],
   "today": {
     "totalTokens": 1234,
     "costUsd": 0.01,
@@ -56,6 +57,22 @@ Example payload:
     },
     "clientCosts": {
       "codex": 0.01
+    },
+    "models": {
+      "gpt-5": 1234
+    },
+    "modelCosts": {
+      "gpt-5": 0.01
+    },
+    "clientModels": {
+      "codex": {
+        "gpt-5": 1234
+      }
+    },
+    "clientModelCosts": {
+      "codex": {
+        "gpt-5": 0.01
+      }
     }
   },
   "month": {
@@ -101,6 +118,8 @@ Example payload:
 
 The hub normalizes records before storing them.
 
+`trackedClients` is optional but recommended for agents and widgets. When it is present, the hub treats omitted clients as intentionally not collected in this payload and preserves their previous usage for that device. This keeps "tracking" as "collect future data" rather than "hide existing history".
+
 `limits` is optional. Agents and widgets include it when AI Tool Limits detection is enabled. Raw OAuth credentials, access tokens, refresh tokens, emails, and provider response bodies must never be sent.
 
 ## `GET /api/stats`
@@ -112,6 +131,7 @@ Response includes:
 - `periods.today`
 - `periods.month`
 - `periods.allTime`
+- `periods.*.clientModels` and `periods.*.clientModelCosts` for preserving model breakdowns when a tracked tool is disabled
 - `limits.providers` aggregated by provider account
 - `devices`
 - stale status for devices that have not reported recently

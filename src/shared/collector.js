@@ -7,8 +7,9 @@ const path = require('node:path');
 const chokidar = require('chokidar');
 const semver = require('semver');
 const { readJson, sharedDataDir } = require('./config');
+const { normalizeClientsCsv } = require('./clientTracking');
 const { tokscalePackageNameForPlatform, tokscalePlatformKey } = require('./tokscalePlatform');
-const { extractUsageFromTokscale } = require('./usage');
+const { emptyPeriod, extractUsageFromTokscale } = require('./usage');
 const { collectLimitsOnce, createLimitsCollector } = require('./limitCollector');
 const cursorAuth = require('./cursorAuth');
 
@@ -127,7 +128,7 @@ function runTokscale({ clients, flags, commandTimeoutMs }) {
 }
 
 async function maybeSyncCursor(clientsCsv, logger) {
-  const enabled = new Set(String(clientsCsv || '').split(',').map((v) => v.trim().toLowerCase()));
+  const enabled = new Set(normalizeClientsCsv(clientsCsv).split(',').filter(Boolean));
   if (!enabled.has('cursor')) return;
   if (!cursorAuth.readActiveAccount()) return;
   try {
@@ -138,7 +139,7 @@ async function maybeSyncCursor(clientsCsv, logger) {
 }
 
 async function maybeSyncAntigravity(clientsCsv, logger) {
-  const enabled = new Set(String(clientsCsv || '').split(',').map((v) => v.trim().toLowerCase()));
+  const enabled = new Set(normalizeClientsCsv(clientsCsv).split(',').filter(Boolean));
   if (!enabled.has('antigravity')) return;
   const { bin, prefixArgs, env } = tokscaleCommand();
   await new Promise((resolve) => {
@@ -158,20 +159,30 @@ async function maybeSyncAntigravity(clientsCsv, logger) {
 
 async function collectUsageOnce(options) {
   const { clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion = '0.1.0' } = options;
-  await maybeSyncCursor(clients, options.logger);
-  await maybeSyncAntigravity(clients, options.logger);
-  const todayJson = await runTokscale({ clients, flags: ['--today'], commandTimeoutMs });
-  const monthJson = await runTokscale({ clients, flags: ['--month'], commandTimeoutMs });
-  const allTimeJson = await runTokscale({ clients, flags: ['--since', allTimeSince], commandTimeoutMs });
+  const normalizedClients = normalizeClientsCsv(clients);
+  let today = emptyPeriod();
+  let month = emptyPeriod();
+  let allTime = emptyPeriod();
+  if (normalizedClients) {
+    await maybeSyncCursor(normalizedClients, options.logger);
+    await maybeSyncAntigravity(normalizedClients, options.logger);
+    const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
+    const monthJson = await runTokscale({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
+    const allTimeJson = await runTokscale({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
+    today = extractUsageFromTokscale(todayJson);
+    month = extractUsageFromTokscale(monthJson);
+    allTime = extractUsageFromTokscale(allTimeJson);
+  }
   const summary = {
     deviceId,
     hostname: os.hostname(),
     platform: `${process.platform}-${process.arch}`,
     updatedAt: new Date().toISOString(),
     agentVersion,
-    today: extractUsageFromTokscale(todayJson),
-    month: extractUsageFromTokscale(monthJson),
-    allTime: extractUsageFromTokscale(allTimeJson)
+    trackedClients: normalizedClients ? normalizedClients.split(',') : [],
+    today,
+    month,
+    allTime
   };
   if (options.limitsEnabled !== false) {
     summary.limits = options.limitsCollector

@@ -51,7 +51,16 @@ function costValue(obj) {
 }
 
 function emptyPeriod() {
-  return { totalTokens: 0, costUsd: 0, clients: {}, clientCosts: {}, models: {}, modelCosts: {} };
+  return {
+    totalTokens: 0,
+    costUsd: 0,
+    clients: {},
+    clientCosts: {},
+    models: {},
+    modelCosts: {},
+    clientModels: {},
+    clientModelCosts: {}
+  };
 }
 
 function normalizeClientName(value) {
@@ -76,6 +85,32 @@ function detectClient(obj) {
 function normalizeModelName(value) {
   const raw = String(value || '').trim();
   return raw || null;
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function normalizeTrackedClients(value) {
+  const values = Array.isArray(value) ? value : String(value ?? '').split(',');
+  return Array.from(new Set(values.map(normalizeClientName).filter(Boolean)));
+}
+
+function validDate(value) {
+  const date = new Date(value || '');
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function recordDate(record) {
+  return validDate(record?.updatedAt || record?.receivedAt);
+}
+
+function utcMonthKey(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function utcDayKey(date) {
+  return `${utcMonthKey(date)}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 function detectModel(obj) {
@@ -134,6 +169,30 @@ function normalizePeriod(input) {
       if (key) period.modelCosts[key] = (period.modelCosts[key] || 0) + asNumber(value);
     }
   }
+  if (input.clientModels && typeof input.clientModels === 'object') {
+    for (const [client, models] of Object.entries(input.clientModels)) {
+      const clientKey = normalizeClientName(client);
+      if (!clientKey || !models || typeof models !== 'object') continue;
+      for (const [model, value] of Object.entries(models)) {
+        const modelKey = normalizeModelName(model);
+        if (!modelKey) continue;
+        if (!period.clientModels[clientKey]) period.clientModels[clientKey] = {};
+        period.clientModels[clientKey][modelKey] = (period.clientModels[clientKey][modelKey] || 0) + Math.max(0, Math.round(asNumber(value)));
+      }
+    }
+  }
+  if (input.clientModelCosts && typeof input.clientModelCosts === 'object') {
+    for (const [client, models] of Object.entries(input.clientModelCosts)) {
+      const clientKey = normalizeClientName(client);
+      if (!clientKey || !models || typeof models !== 'object') continue;
+      for (const [model, value] of Object.entries(models)) {
+        const modelKey = normalizeModelName(model);
+        if (!modelKey) continue;
+        if (!period.clientModelCosts[clientKey]) period.clientModelCosts[clientKey] = {};
+        period.clientModelCosts[clientKey][modelKey] = (period.clientModelCosts[clientKey][modelKey] || 0) + asNumber(value);
+      }
+    }
+  }
   return period;
 }
 
@@ -147,7 +206,9 @@ function extractUsageFromTokscale(json) {
       clients: {},
       clientCosts: {},
       models: {},
-      modelCosts: {}
+      modelCosts: {},
+      clientModels: {},
+      clientModelCosts: {}
     };
   }
   const period = emptyPeriod();
@@ -163,6 +224,14 @@ function extractUsageFromTokscale(json) {
     if (client && cost > 0) period.clientCosts[client] = (period.clientCosts[client] || 0) + cost;
     if (model && tokens > 0) period.models[model] = (period.models[model] || 0) + Math.round(tokens);
     if (model && cost > 0) period.modelCosts[model] = (period.modelCosts[model] || 0) + cost;
+    if (client && model && tokens > 0) {
+      if (!period.clientModels[client]) period.clientModels[client] = {};
+      period.clientModels[client][model] = (period.clientModels[client][model] || 0) + Math.round(tokens);
+    }
+    if (client && model && cost > 0) {
+      if (!period.clientModelCosts[client]) period.clientModelCosts[client] = {};
+      period.clientModelCosts[client][model] = (period.clientModelCosts[client][model] || 0) + cost;
+    }
   }
   return period;
 }
@@ -179,19 +248,66 @@ function normalizeDeviceRecord(record) {
     periods: {},
     limits: normalizeLimitsSummary(record.limits)
   };
+  if (hasOwn(record, 'trackedClients')) normalized.trackedClients = normalizeTrackedClients(record.trackedClients);
   for (const periodName of PERIODS) normalized.periods[periodName] = normalizePeriod(record[periodName] || record.periods?.[periodName]);
   return normalized;
+}
+
+function addClientModelUsage(target, client, models, costs) {
+  for (const [model, tokens] of Object.entries(models || {})) {
+    target.models[model] = (target.models[model] || 0) + tokens;
+    if (!target.clientModels[client]) target.clientModels[client] = {};
+    target.clientModels[client][model] = (target.clientModels[client][model] || 0) + tokens;
+  }
+  for (const [model, cost] of Object.entries(costs || {})) {
+    target.modelCosts[model] = (target.modelCosts[model] || 0) + cost;
+    if (!target.clientModelCosts[client]) target.clientModelCosts[client] = {};
+    target.clientModelCosts[client][model] = (target.clientModelCosts[client][model] || 0) + cost;
+  }
+}
+
+function shouldPreservePeriod(periodName, existingRecord, incomingRecord) {
+  if (periodName === 'allTime') return true;
+  const existingDate = recordDate(existingRecord);
+  const incomingDate = recordDate(incomingRecord);
+  if (!existingDate || !incomingDate) return false;
+  if (periodName === 'today') return utcDayKey(existingDate) === utcDayKey(incomingDate);
+  if (periodName === 'month') return utcMonthKey(existingDate) === utcMonthKey(incomingDate);
+  return false;
+}
+
+function preserveUntrackedClientUsage(existingRecord, incomingRecord, trackedClients) {
+  const active = new Set(trackedClients || []);
+  for (const periodName of PERIODS) {
+    if (!shouldPreservePeriod(periodName, existingRecord, incomingRecord)) continue;
+    const source = existingRecord.periods?.[periodName] || emptyPeriod();
+    const target = incomingRecord.periods?.[periodName] || emptyPeriod();
+    incomingRecord.periods[periodName] = target;
+    for (const [client, tokens] of Object.entries(source.clients || {})) {
+      if (active.has(client) || hasOwn(target.clients, client)) continue;
+      const cost = source.clientCosts?.[client] || 0;
+      target.totalTokens += tokens;
+      target.costUsd += cost;
+      target.clients[client] = tokens;
+      if (cost > 0) target.clientCosts[client] = cost;
+      addClientModelUsage(target, client, source.clientModels?.[client], source.clientModelCosts?.[client]);
+    }
+  }
 }
 
 function mergeDeviceRecord(existing, incoming) {
   const hasExisting = existing && typeof existing === 'object';
   const hasIncomingLimits = incoming && typeof incoming === 'object' && Object.prototype.hasOwnProperty.call(incoming, 'limits');
+  const hasIncomingTrackedClients = hasOwn(incoming, 'trackedClients');
   const normalizedIncoming = normalizeDeviceRecord(incoming || {});
   if (!hasExisting) return normalizedIncoming;
 
   const normalizedExisting = normalizeDeviceRecord(existing);
   if (incoming?.limitsOnly === true) normalizedIncoming.periods = normalizedExisting.periods;
   if (!hasIncomingLimits) normalizedIncoming.limits = normalizedExisting.limits;
+  if (hasIncomingTrackedClients) {
+    preserveUntrackedClientUsage(normalizedExisting, normalizedIncoming, normalizedIncoming.trackedClients || []);
+  }
   return normalizedIncoming;
 }
 
@@ -211,6 +327,7 @@ function aggregateDevices(devices, staleAfterMs, nowMs = Date.now()) {
       receivedAt: normalized.receivedAt,
       ageMs: Number.isFinite(ageMs) ? ageMs : null,
       stale,
+      ...(hasOwn(normalized, 'trackedClients') ? { trackedClients: normalized.trackedClients } : {}),
       periods: normalized.periods,
       limits: normalized.limits
     });
@@ -223,6 +340,18 @@ function aggregateDevices(devices, staleAfterMs, nowMs = Date.now()) {
       for (const [client, cost] of Object.entries(source.clientCosts)) target.clientCosts[client] = (target.clientCosts[client] || 0) + cost;
       for (const [model, tokens] of Object.entries(source.models)) target.models[model] = (target.models[model] || 0) + tokens;
       for (const [model, cost] of Object.entries(source.modelCosts)) target.modelCosts[model] = (target.modelCosts[model] || 0) + cost;
+      for (const [client, models] of Object.entries(source.clientModels)) {
+        if (!target.clientModels[client]) target.clientModels[client] = {};
+        for (const [model, tokens] of Object.entries(models)) {
+          target.clientModels[client][model] = (target.clientModels[client][model] || 0) + tokens;
+        }
+      }
+      for (const [client, models] of Object.entries(source.clientModelCosts)) {
+        if (!target.clientModelCosts[client]) target.clientModelCosts[client] = {};
+        for (const [model, cost] of Object.entries(models)) {
+          target.clientModelCosts[client][model] = (target.clientModelCosts[client][model] || 0) + cost;
+        }
+      }
     }
   }
   aggregate.limits = aggregateLimits(aggregate.devices, staleAfterMs, now);
@@ -235,6 +364,11 @@ function aggregateDevices(devices, staleAfterMs, nowMs = Date.now()) {
     }
     for (const [model, cost] of Object.entries(aggregate.periods[periodName].modelCosts)) {
       aggregate.periods[periodName].modelCosts[model] = Number(cost.toFixed(6));
+    }
+    for (const models of Object.values(aggregate.periods[periodName].clientModelCosts)) {
+      for (const [model, cost] of Object.entries(models)) {
+        models[model] = Number(cost.toFixed(6));
+      }
     }
   }
   return aggregate;

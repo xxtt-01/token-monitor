@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, nativeImage, screen, session, shell } = require('electron');
 const { defaultDeviceId, generateHubSecret, lanIpv4Addresses, loadDotEnv, pidFilePath, sharedDataDir } = require('../shared/config');
+const { DEFAULT_CLIENTS, clientsCsvForSetting } = require('../shared/clientTracking');
 const { startCollector } = require('../shared/collector');
 const { createHub } = require('../hub/server');
 const { normalizeLimitsRefreshMs, parseBoolean, parseLimitProviders } = require('../shared/limitCollector');
@@ -19,6 +20,12 @@ const cursorAuth = require('../shared/cursorAuth');
 const cursorProbe = require('../shared/cursorProbe');
 const semver = require('semver');
 const { normalizeCurrency } = require('../shared/currency');
+const {
+  applyArchivedClientUsage,
+  captureArchivedClientUsage,
+  normalizeArchivedClientUsage,
+  pruneArchivedClientUsage
+} = require('../shared/clientUsageArchive');
 const { aggregateDevices } = require('../shared/usage');
 const { startDiscordRpc, stopDiscordRpc, updateDiscordRpc } = require('./discordRpc');
 const { buildTrayIcon, createTray, formatTrayText, pickUsageTrayIconId, popoverBounds } = require('./tray');
@@ -104,7 +111,8 @@ function defaultSettings() {
     discordRpcEnabled: false,
     deviceId: process.env.TOKEN_MONITOR_DEVICE_ID || defaultDeviceId(),
     lastPostedDeviceId: '',
-    clients: process.env.TOKEN_MONITOR_CLIENTS || 'claude,codex,hermes,opencode,openclaw,cursor,antigravity',
+    clients: clientsCsvForSetting(process.env.TOKEN_MONITOR_CLIENTS),
+    archivedClientUsage: { version: 1, clients: {} },
     allTimeSince: process.env.TOKEN_MONITOR_ALL_TIME_SINCE || '2024-01-01',
     limitsEnabled: parseBoolean(process.env.TOKEN_MONITOR_LIMITS_ENABLED, true),
     limitProviders: parseLimitProviders(process.env.TOKEN_MONITOR_LIMIT_PROVIDERS).join(','),
@@ -482,6 +490,7 @@ function readSettings() {
     merged.hubHostPort = normalizeHubPort(merged.hubHostPort);
     merged.hubHostSecret = typeof merged.hubHostSecret === 'string' ? merged.hubHostSecret : '';
     merged.floatingBubbleEnabled = parseBoolean(merged.floatingBubbleEnabled ?? merged.edgeDrawerEnabled, false);
+    merged.archivedClientUsage = normalizeArchivedClientUsage(merged.archivedClientUsage);
     delete merged.edgeDrawerEnabled;
     merged.floatingBubbleTrigger = merged.floatingBubbleTrigger === 'hover' ? 'hover' : 'click';
     merged.floatingBubbleContent = normalizeTrayContent(merged.floatingBubbleContent, 'icon');
@@ -517,6 +526,39 @@ function syncLoginItemSettingFromOs() {
   if (settings.startAtLogin === actual) return;
   settings.startAtLogin = actual;
   saveSettings();
+}
+
+function trackedClientSet(value) {
+  return new Set(String(value || '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean));
+}
+
+function removedTrackedClients(previousClients, nextClients) {
+  const previous = trackedClientSet(previousClients);
+  const next = trackedClientSet(nextClients);
+  return Array.from(previous).filter((client) => !next.has(client));
+}
+
+function localArchiveSourceDevice() {
+  const deviceId = settings?.deviceId || defaultDeviceId();
+  if (lastCollectedDevice?.deviceId === deviceId) return lastCollectedDevice;
+  if (localDevice?.deviceId === deviceId) return localDevice;
+  return (latestStats?.devices || []).find((device) => device?.deviceId === deviceId) || null;
+}
+
+function updateArchivedClientUsage(previousClients, nextClients) {
+  const removedClients = removedTrackedClients(previousClients, nextClients);
+  let archive = pruneArchivedClientUsage(settings.archivedClientUsage, nextClients);
+  if (removedClients.length > 0) {
+    archive = captureArchivedClientUsage(archive, localArchiveSourceDevice(), removedClients);
+  }
+  settings.archivedClientUsage = archive;
+}
+
+function summaryWithArchivedClientUsage(summary) {
+  return applyArchivedClientUsage(summary, settings?.archivedClientUsage, {
+    activeClients: settings?.clients,
+    now: new Date()
+  });
 }
 
 function applyMacActivationPolicy() {
@@ -582,6 +624,7 @@ let sseAbortController = null;
 let sseRetryTimer = null;
 let streamConnected = false;
 let syncCollectorHandle = null;
+let lastCollectedDevice = null;
 let tray = null;
 let latestStats = null;
 let suppressNextBlurHide = false;
@@ -724,7 +767,7 @@ function startSyncCollector() {
   stopSyncCollector();
   if (!effectiveHubConfig().url) return;
   syncCollectorHandle = startCollector({
-    clients: settings.clients || 'claude,codex,hermes,opencode,openclaw,cursor,antigravity',
+    clients: clientsCsvForSetting(settings.clients),
     allTimeSince: settings.allTimeSince || '2024-01-01',
     commandTimeoutMs: 120 * 1000,
     deviceId: settings.deviceId || defaultDeviceId(),
@@ -736,9 +779,11 @@ function startSyncCollector() {
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     onUpdate: async (summary) => {
+      const visibleSummary = summaryWithArchivedClientUsage(summary);
+      lastCollectedDevice = { ...visibleSummary, receivedAt: new Date().toISOString() };
       if (isExternalAgentActive()) return;
       try {
-        await postToHub(summary);
+        await postToHub(visibleSummary);
       } catch (error) {
         console.log(`[sync-collector] post failed: ${error.message}`);
       }
@@ -799,7 +844,7 @@ function startLocalCollector() {
   mode = 'local';
   sendStatus(false, { reason: 'collecting' });
   localCollectorHandle = startCollector({
-    clients: settings.clients || 'claude,codex,hermes,opencode,openclaw,cursor,antigravity',
+    clients: clientsCsvForSetting(settings.clients),
     allTimeSince: settings.allTimeSince || '2024-01-01',
     commandTimeoutMs: 120 * 1000,
     deviceId: settings.deviceId || defaultDeviceId(),
@@ -811,7 +856,9 @@ function startLocalCollector() {
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     onUpdate: (summary, reason) => {
-      localDevice = { ...summary, receivedAt: new Date().toISOString() };
+      const visibleSummary = summaryWithArchivedClientUsage(summary);
+      localDevice = { ...visibleSummary, receivedAt: new Date().toISOString() };
+      lastCollectedDevice = localDevice;
       localStats = aggregateDevices([localDevice], 0);
       updateDiscordRpc(localStats, settings.currency);
       sendPush({ event: 'stats', data: { type: 'stats', reason, stats: localStats, at: new Date().toISOString() } });
@@ -1445,6 +1492,7 @@ app.whenReady().then(() => {
     const previousStartAtLogin = settings.startAtLogin;
     const normalizedCurrency = patch.currency !== undefined ? normalizeCurrency(patch.currency, settings.currency) : normalizeCurrency(settings.currency);
     const normalizedPatch = { ...patch, currency: normalizedCurrency };
+    if (patch.clients !== undefined) normalizedPatch.clients = clientsCsvForSetting(patch.clients, '');
     settings = normalizeWindowBehaviorSettings({
       ...settings,
       ...normalizedPatch,
@@ -1452,6 +1500,7 @@ app.whenReady().then(() => {
       hubHostPort: patch.hubHostPort !== undefined ? normalizeHubPort(patch.hubHostPort, settings.hubHostPort) : settings.hubHostPort,
       hubHostSecret: patch.hubHostSecret !== undefined ? String(patch.hubHostSecret) : settings.hubHostSecret,
       deviceId: (patch.deviceId !== undefined ? String(patch.deviceId).trim() : settings.deviceId) || defaultDeviceId(),
+      clients: patch.clients !== undefined ? clientsCsvForSetting(patch.clients, '') : clientsCsvForSetting(settings.clients, DEFAULT_CLIENTS),
       refreshMs: Math.max(5000, Number(patch.refreshMs ?? settings.refreshMs ?? 15000)),
       glassOpacity: Math.max(0, Math.min(100, Number(patch.glassOpacity ?? settings.glassOpacity ?? 68))),
       glassBlur: Math.max(0, Math.min(100, Number(patch.glassBlur ?? settings.glassBlur ?? 32))),
@@ -1474,6 +1523,8 @@ app.whenReady().then(() => {
       language: patch.language !== undefined ? normalizeLanguageSetting(patch.language, settings.language) : normalizeLanguageSetting(settings.language),
       startAtLogin: loginItemEnabledHere() ? parseBoolean(patch.startAtLogin ?? settings.startAtLogin, false) : false
     }, normalizedPatch);
+    settings.archivedClientUsage = normalizeArchivedClientUsage(settings.archivedClientUsage);
+    if (settings.clients !== previousClients) updateArchivedClientUsage(previousClients, settings.clients);
     delete settings.edgeDrawerEnabled;
     saveSettings();
     if (settings.startAtLogin !== previousStartAtLogin) {
