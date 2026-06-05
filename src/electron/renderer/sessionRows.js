@@ -50,7 +50,7 @@
     const raw = String(id || '').trim();
     if (!raw) return '';
     const rollout = raw.match(/^rollout-\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}[:-]\d{2}-(.+)$/);
-    if (rollout) return `rollout ${rollout[1]}`;
+    if (rollout) return rollout[1];
     if (/^\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}/.test(raw)) return '';
     return raw;
   }

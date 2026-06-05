@@ -58,7 +58,7 @@ test('session rows sort by latest activity and keep subtitles compact', () => {
   ]);
   assert.equal(rows[0].name, 'Codex · gpt-5.5');
   assert.equal(rows[0].subtitle, '12:25 · 184 msgs');
-  assert.equal(rows[0].detail, 'rollout 019e76fc-dddd-eeee-ffff-222222222222');
+  assert.equal(rows[0].detail, '019e76fc-dddd-eeee-ffff-222222222222');
   assert.equal(rows[0].kind, 'session');
   assert.equal(rows[1].subtitle, '12:07 · 1 msg');
   assert.equal(rows[1].detail, '214c24d5-aaaa-bbbb-cccc-f87e');
