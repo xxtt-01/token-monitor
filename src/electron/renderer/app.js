@@ -2559,7 +2559,16 @@ function renderOpencodeStatus() {
     return;
   }
 
-  setCursorStatusText(statusEl, t('settings.opencode.statusLinked'));
+  // Linked: append a read-only indicator of what the cookie actually unlocked
+  // (Go real usage / Zen balance). Empty when the account has neither yet.
+  const tags = [];
+  if (status.go) tags.push('Go ✓');
+  if (status.hasBalance) tags.push(`${t('settings.opencode.tagZenBalance')} ✓`);
+  else if (status.zen) tags.push('Zen ✓');
+  const linkedText = tags.length
+    ? `${t('settings.opencode.statusLinked')} · ${tags.join(' · ')}`
+    : t('settings.opencode.statusLinked');
+  setCursorStatusText(statusEl, linkedText);
   openBtn.classList.add('hidden');
   logoutBtn.classList.remove('hidden');
   refreshBtn.classList.remove('hidden');

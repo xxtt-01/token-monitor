@@ -1540,12 +1540,15 @@ function currentOpenCodeCookie() {
 async function readOpenCodeStatus() {
   const cookie = currentOpenCodeCookie();
   if (!cookie) return { linked: false };
-  const result = await opencodeWeb.fetchZen(cookie, {});
-  if (result.status === 'ok') return { linked: true, expired: false };
-  if (result.status === 'unauthorized') {
-    return { linked: true, expired: true, error: 'OpenCode cookie expired' };
-  }
-  return { linked: true, expired: false, error: result.status || 'OpenCode status check failed' };
+  // Probe both sources so a Go-only cookie isn't judged solely by Zen (and vice
+  // versa). Both fetchers swallow their own errors, so Promise.all won't reject.
+  const [go, zen] = await Promise.all([
+    opencodeWeb.fetchGoWeb(cookie, {}),
+    opencodeWeb.fetchZen(cookie, {})
+  ]);
+  const summary = opencodeWeb.summarizeLink(go, zen);
+  if (summary.expired) return { ...summary, error: 'OpenCode cookie expired' };
+  return summary;
 }
 
 function normalizeManualCookie(input) {
@@ -1871,8 +1874,13 @@ app.whenReady().then(() => {
       return { ok: true, cleared: true };
     }
     try {
-      const result = await opencodeWeb.fetchZen(cookie, {});
-      if (result.status === 'unauthorized') {
+      // Accept the cookie if EITHER Go or Zen authorizes it; only reject when
+      // both report it unauthorized (a genuinely expired/invalid session).
+      const [go, zen] = await Promise.all([
+        opencodeWeb.fetchGoWeb(cookie, {}),
+        opencodeWeb.fetchZen(cookie, {})
+      ]);
+      if (opencodeWeb.summarizeLink(go, zen).expired) {
         return { ok: false, error: 'OpenCode rejected the cookie (it may be expired)' };
       }
       settings.opencodeCookie = cookie;

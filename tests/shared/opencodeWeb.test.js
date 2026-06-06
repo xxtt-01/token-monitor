@@ -216,3 +216,38 @@ test('fetchGoWeb returns notConfigured without a cookie', async () => {
   const out = await web.fetchGoWeb('', { now: () => Date.now() });
   assert.strictEqual(out.status, 'notConfigured');
 });
+
+test('summarizeLink: both Go usage and Zen balance present', () => {
+  const go = { status: 'ok', windows: [{ kind: 'session' }] };
+  const zen = { status: 'ok', windows: [], balanceUsd: 4.5 };
+  assert.deepStrictEqual(web.summarizeLink(go, zen), { linked: true, expired: false, go: true, zen: true, hasBalance: true });
+});
+
+test('summarizeLink: Go only (Zen unavailable) still links and flags Go', () => {
+  const go = { status: 'ok', windows: [{ kind: 'session' }, { kind: 'weekly' }] };
+  const zen = { status: 'unavailable', windows: [], balanceUsd: null };
+  assert.deepStrictEqual(web.summarizeLink(go, zen), { linked: true, expired: false, go: true, zen: false, hasBalance: false });
+});
+
+test('summarizeLink: Zen balance only (Go failed) links and flags Zen', () => {
+  const go = { status: 'unavailable', windows: [] };
+  const zen = { status: 'ok', windows: [], balanceUsd: 0 };
+  assert.deepStrictEqual(web.summarizeLink(go, zen), { linked: true, expired: false, go: false, zen: true, hasBalance: true });
+});
+
+test('summarizeLink: both unauthorized => expired', () => {
+  const out = web.summarizeLink({ status: 'unauthorized', windows: [] }, { status: 'unauthorized', windows: [], balanceUsd: null });
+  assert.strictEqual(out.linked, true);
+  assert.strictEqual(out.expired, true);
+});
+
+test('summarizeLink: mixed failure (one unauthorized, one unavailable) is not expired', () => {
+  const out = web.summarizeLink({ status: 'unauthorized', windows: [] }, { status: 'unavailable', windows: [], balanceUsd: null });
+  assert.strictEqual(out.expired, false);
+  assert.ok(out.error);
+});
+
+test('summarizeLink: cookie valid but nothing to show yet (both ok+empty)', () => {
+  const out = web.summarizeLink({ status: 'ok', windows: [] }, { status: 'ok', windows: [], balanceUsd: null });
+  assert.deepStrictEqual(out, { linked: true, expired: false, go: false, zen: false, hasBalance: false });
+});

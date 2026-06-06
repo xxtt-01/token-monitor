@@ -336,9 +336,32 @@ async function fetchGoWeb(cookieRaw, deps = {}) {
   }
 }
 
+// Summarizes what a single opencode.ai cookie unlocks, from the two probe
+// results. The cookie is always "linked" (this is only called when one is set);
+// `expired` means BOTH sources rejected it as unauthorized. `go`/`zen` flag
+// whether real usage / Zen data was actually returned (not just reachable).
+function summarizeLink(go = {}, zen = {}) {
+  const goOk = go.status === 'ok';
+  const zenOk = zen.status === 'ok';
+  const hasBalance = typeof zen.balanceUsd === 'number' && Number.isFinite(zen.balanceUsd);
+  if (goOk || zenOk) {
+    return {
+      linked: true,
+      expired: false,
+      go: goOk && (go.windows || []).length > 0,
+      zen: zenOk && (hasBalance || (zen.windows || []).length > 0),
+      hasBalance
+    };
+  }
+  if (go.status === 'unauthorized' && zen.status === 'unauthorized') {
+    return { linked: true, expired: true, go: false, zen: false, hasBalance: false };
+  }
+  return { linked: true, expired: false, go: false, zen: false, hasBalance: false, error: go.status || zen.status || 'unavailable' };
+}
+
 module.exports = {
   BASE_URL, SERVER_URL, WORKSPACES_SERVER_ID, SUBSCRIPTION_SERVER_ID,
   sanitizeCookieHeader, serverRequestUrl, buildHeaders,
   parseWorkspaceIds, parseSubscription, fetchZen, normalizeWorkspaceId,
-  resolveWorkspaceId, fetchGoWeb, parseGoUsage
+  resolveWorkspaceId, fetchGoWeb, parseGoUsage, summarizeLink
 };
