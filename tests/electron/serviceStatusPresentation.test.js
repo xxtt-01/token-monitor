@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
-  affectedComponentNames
+  affectedComponentNames,
+  agoBucket
 } = require('../../src/electron/renderer/serviceStatusPresentation');
 
 test('affectedComponentNames splits names into a visible slice and overflow count', () => {
@@ -40,4 +41,12 @@ test('affectedComponentNames ignores blank names and tolerates bad input', () =>
     visible: ['Search'],
     overflow: 0
   });
+});
+
+test('agoBucket buckets into seconds, minutes, and hours', () => {
+  assert.deepEqual(agoBucket(0), { unit: 'seconds', value: 0 });
+  assert.deepEqual(agoBucket(5_000), { unit: 'seconds', value: 5 });
+  assert.deepEqual(agoBucket(65_000), { unit: 'minutes', value: 1 });
+  assert.deepEqual(agoBucket(3_600_000), { unit: 'hours', value: 1 });
+  assert.deepEqual(agoBucket(7_500_000), { unit: 'hours', value: 2 });
 });

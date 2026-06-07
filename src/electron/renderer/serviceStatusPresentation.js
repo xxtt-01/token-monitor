@@ -20,5 +20,12 @@
     };
   }
 
-  return { affectedComponentNames };
+  function agoBucket(ms) {
+    const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    if (total < 60) return { unit: 'seconds', value: total };
+    if (total < 3600) return { unit: 'minutes', value: Math.floor(total / 60) };
+    return { unit: 'hours', value: Math.floor(total / 3600) };
+  }
+
+  return { affectedComponentNames, agoBucket };
 });

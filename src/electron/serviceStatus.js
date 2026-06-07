@@ -11,16 +11,16 @@ const USER_AGENT = `TokenMonitor/${appVersion()} (+https://github.com/Javis603/t
 
 const SERVICE_STATUS_PROVIDERS = [
   {
-    id: 'openai',
-    label: 'OpenAI',
-    pageUrl: 'https://status.openai.com',
-    summaryUrl: 'https://status.openai.com/api/v2/summary.json'
-  },
-  {
     id: 'claude',
     label: 'Claude',
     pageUrl: 'https://status.claude.com',
     summaryUrl: 'https://status.claude.com/api/v2/summary.json'
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    pageUrl: 'https://status.openai.com',
+    summaryUrl: 'https://status.openai.com/api/v2/summary.json'
   },
   {
     id: 'cursor',
@@ -137,11 +137,15 @@ function createServiceStatusClient(options = {}) {
   let cache = null;
   let cacheUntil = 0;
 
-  async function getServiceStatus({ force = false } = {}) {
+  async function getServiceStatus({ force = false, providerIds = null } = {}) {
+    const wanted = Array.isArray(providerIds)
+      ? providers.filter((provider) => providerIds.includes(provider.id))
+      : providers;
+    const key = wanted.map((provider) => provider.id).slice().sort().join(',');
     const currentTime = Number(now());
-    if (!force && cache && currentTime < cacheUntil) return cache;
+    if (!force && cache && cache.key === key && currentTime < cacheUntil) return cache;
     const checkedAt = new Date(currentTime).toISOString();
-    const results = await Promise.all(providers.map(async (provider) => {
+    const results = await Promise.all(wanted.map(async (provider) => {
       try {
         const payload = await fetchJsonWithTimeout(fetchImpl, provider.summaryUrl, timeoutMs);
         return summarizeStatuspageProvider(provider, payload, { checkedAt });
@@ -150,7 +154,7 @@ function createServiceStatusClient(options = {}) {
       }
     }));
     const anyError = results.some((entry) => entry.error);
-    cache = { checkedAt, providers: results };
+    cache = { key, checkedAt, providers: results };
     cacheUntil = currentTime + (anyError ? errorCacheMs : cacheMs);
     return cache;
   }

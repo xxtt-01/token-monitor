@@ -81,9 +81,10 @@ test('summarizeStatuspageProvider counts under_maintenance as maintenance, not d
   assert.equal(result.maintenanceCount, 1);
 });
 
-test('default providers cover openai, claude, cursor, and deepseek with summary endpoints', () => {
+test('default providers cover claude, openai, cursor, and deepseek with summary endpoints', () => {
+  // Order mirrors the other settings lists (Claude → Codex/OpenAI → Cursor → …).
   const ids = SERVICE_STATUS_PROVIDERS.map((entry) => entry.id);
-  assert.deepEqual(ids, ['openai', 'claude', 'cursor', 'deepseek']);
+  assert.deepEqual(ids, ['claude', 'openai', 'cursor', 'deepseek']);
   for (const entry of SERVICE_STATUS_PROVIDERS) {
     assert.match(entry.summaryUrl, /\/api\/v2\/summary\.json$/);
     assert.ok(entry.pageUrl.startsWith('https://'), `${entry.id} pageUrl should be https`);
@@ -153,4 +154,36 @@ test('service status client caches results until forced', async () => {
   assert.equal(first.providers[0].status, 'degraded');
   assert.equal(second, first);
   assert.notEqual(forced, first);
+});
+
+test('service status client fetches only the requested providerIds', async () => {
+  const fetched = [];
+  const providers = [
+    { id: 'a', label: 'A', pageUrl: 'https://a.example.com', summaryUrl: 'https://a.example.com/api/v2/summary.json' },
+    { id: 'b', label: 'B', pageUrl: 'https://b.example.com', summaryUrl: 'https://b.example.com/api/v2/summary.json' }
+  ];
+  const client = createServiceStatusClient({
+    providers,
+    now: () => 0,
+    fetchImpl: async (url) => { fetched.push(url); return { ok: true, json: async () => summary }; }
+  });
+
+  const result = await client.getServiceStatus({ providerIds: ['a'] });
+
+  assert.deepEqual(fetched, ['https://a.example.com/api/v2/summary.json']);
+  assert.deepEqual(result.providers.map((entry) => entry.id), ['a']);
+});
+
+test('service status client makes no request when providerIds is empty', async () => {
+  let calls = 0;
+  const client = createServiceStatusClient({
+    providers: [provider],
+    now: () => 0,
+    fetchImpl: async () => { calls += 1; return { ok: true, json: async () => summary }; }
+  });
+
+  const result = await client.getServiceStatus({ providerIds: [] });
+
+  assert.equal(calls, 0);
+  assert.deepEqual(result.providers, []);
 });

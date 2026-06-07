@@ -128,14 +128,13 @@ const VIEW_DISPLAY_OPTIONS = [
 const viewPeriodValues = new Set(['today', 'month', 'allTime']);
 const viewBreakdownValues = new Set([...baseBreakdownOrder, 'status', 'limits']);
 const SERVICE_STATUS_PLACEHOLDERS = [
-  { id: 'openai', label: 'OpenAI', pageUrl: 'https://status.openai.com' },
   { id: 'claude', label: 'Claude', pageUrl: 'https://status.claude.com' },
+  { id: 'openai', label: 'OpenAI', pageUrl: 'https://status.openai.com' },
   { id: 'cursor', label: 'Cursor', pageUrl: 'https://status.cursor.com' },
   { id: 'deepseek', label: 'DeepSeek', pageUrl: 'https://status.deepseek.com' }
 ];
-// Mirrors DEFAULT_CACHE_MS in serviceStatus.js — the renderer skips re-asking
-// the main process while its cache is still warm.
-const SERVICE_STATUS_MIN_REFRESH_MS = 60_000;
+const SERVICE_PROVIDER_OPTIONS = SERVICE_STATUS_PLACEHOLDERS.map((entry) => ({ id: entry.id, label: entry.label }));
+const serviceStatusProviderPreferencesApi = window.TokenMonitorServiceStatusProviderPreferences;
 const SETTINGS_SECTION_IDS = ['general', 'main', 'window', 'tools', 'limits', 'accounts', 'sync'];
 const initialFloatingBubble = window.__TOKEN_MONITOR_INITIAL_FLOATING_BUBBLE__ || { collapsed: false, side: null };
 const initialViewState = window.__TOKEN_MONITOR_INITIAL_VIEW_STATE__ || {};
@@ -146,7 +145,7 @@ function normalizeInitialViewValue(value, allowed, fallback) {
   return allowed.has(raw) ? raw : fallback;
 }
 
-const state = { period: normalizeInitialViewValue(initialViewState.period, viewPeriodValues, 'today'), appUpdate: null, breakdown: normalizeInitialViewValue(initialViewState.breakdown, viewBreakdownValues, 'tool'), settings: null, stats: null, serviceStatus: null, serviceStatusBusy: false, refreshTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false, hubInfo: null, cursorAccount: { status: null, error: '' }, cursorAccountExpanded: false, opencodeAccount: { status: null, error: '' }, opencodeCookieExpanded: false, floatingBubble: initialFloatingBubble, suppressInitialNumberAnimation: window.__TOKEN_MONITOR_SUPPRESS_INITIAL_NUMBER_ANIMATION__ === true, openSession: null, detailSort: 'time', recordingWindowShortcut: false, windowShortcutInvalid: false };
+const state = { period: normalizeInitialViewValue(initialViewState.period, viewPeriodValues, 'today'), appUpdate: null, breakdown: normalizeInitialViewValue(initialViewState.breakdown, viewBreakdownValues, 'tool'), settings: null, stats: null, serviceStatus: null, serviceStatusBusy: false, serviceProvidersExpanded: false, serviceStatusTicker: null, refreshTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false, hubInfo: null, cursorAccount: { status: null, error: '' }, cursorAccountExpanded: false, opencodeAccount: { status: null, error: '' }, opencodeCookieExpanded: false, floatingBubble: initialFloatingBubble, suppressInitialNumberAnimation: window.__TOKEN_MONITOR_SUPPRESS_INITIAL_NUMBER_ANIMATION__ === true, openSession: null, detailSort: 'time', recordingWindowShortcut: false, windowShortcutInvalid: false };
 state.settingsSections = Object.fromEntries(SETTINGS_SECTION_IDS.map((id) => [id, false]));
 const defaultAppearance = { glassOpacity: 68, glassBlur: 32, zoomFactor: 1, systemGlass: true, showLiveDot: true, showToolIcons: true, titleIconOnly: false };
 let preferenceDrag = null;
@@ -1035,18 +1034,36 @@ function serviceStatusMeta(provider) {
   return parts.join(' · ') || t('serviceStatus.noIssues');
 }
 
+function visibleServiceProviderIds() {
+  return serviceStatusProviderPreferencesApi.visibleOrder(
+    SERVICE_PROVIDER_OPTIONS,
+    state.settings?.serviceProviderDisplayOrder,
+    state.settings?.hiddenServiceProviders
+  );
+}
+
 function serviceStatusRows() {
-  if (state.serviceStatus?.providers?.length) return state.serviceStatus.providers;
-  return SERVICE_STATUS_PLACEHOLDERS.map((provider) => ({
-    ...provider,
-    status: 'unknown',
-    description: state.serviceStatusBusy ? t('serviceStatus.loading') : t('serviceStatus.notChecked'),
-    checkedAt: '',
-    updatedAt: '',
-    componentIssues: [],
-    incidentCount: 0,
-    maintenanceCount: 0
-  }));
+  const order = visibleServiceProviderIds();
+  const rank = new Map(order.map((id, index) => [id, index]));
+  const base = (state.serviceStatus?.providers?.length)
+    ? state.serviceStatus.providers
+    : SERVICE_STATUS_PLACEHOLDERS.map((provider) => ({
+        ...provider,
+        status: 'unknown',
+        description: state.serviceStatusBusy ? t('serviceStatus.loading') : t('serviceStatus.notChecked'),
+        checkedAt: '',
+        updatedAt: '',
+        componentIssues: [],
+        incidentCount: 0,
+        maintenanceCount: 0
+      }));
+  return base
+    .filter((provider) => rank.has(provider.id))
+    .sort((a, b) => rank.get(a.id) - rank.get(b.id));
+}
+
+function serviceStatusIconId(id) {
+  return id === 'openai' ? 'codex' : id; // claude/cursor/deepseek map 1:1
 }
 
 function renderServiceStatus() {
@@ -1060,24 +1077,47 @@ function renderServiceStatus() {
     row.addEventListener('click', () => window.tokenMonitor.openExternal?.(provider.pageUrl));
     const head = document.createElement('div');
     head.className = 'service-status-head';
+    const title = document.createElement('div');
+    title.className = 'service-status-title';
+    if (state.settings?.showToolIcons) {
+      const icon = document.createElement('span');
+      icon.className = `service-status-icon row-icon row-icon-${serviceStatusIconId(provider.id)}`;
+      title.append(icon);
+    }
     const name = document.createElement('strong');
     name.textContent = provider.label;
+    title.append(name);
     const pill = document.createElement('span');
     pill.className = 'service-status-pill';
     pill.textContent = serviceStatusLabel(provider.status);
-    head.append(name, pill);
+    head.append(title, pill);
     const description = document.createElement('div');
     description.className = 'service-status-description';
     description.textContent = provider.description || t('serviceStatus.unknown');
     const meta = document.createElement('div');
     meta.className = 'service-status-meta';
-    const checked = provider.checkedAt ? t('serviceStatus.checkedAt', { time: formatTime(provider.checkedAt) }) : '';
-    meta.textContent = [serviceStatusMeta(provider), checked].filter(Boolean).join(' · ');
+    const metaInfo = serviceStatusMeta(provider);
+    meta.textContent = metaInfo;
+    if (provider.checkedAt) {
+      if (metaInfo) meta.append(document.createTextNode(' · '));
+      const checkedSpan = document.createElement('span');
+      checkedSpan.className = 'service-status-checked';
+      checkedSpan.dataset.checkedAt = provider.checkedAt;
+      checkedSpan.textContent = formatAgo(Date.now() - Date.parse(provider.checkedAt));
+      meta.append(checkedSpan);
+    }
     const affected = serviceStatusPresentationApi.affectedComponentNames(provider.componentIssues).all;
     if (affected.length) meta.title = affected.join(t('serviceStatus.listSeparator'));
     row.append(head, description, meta);
     return row;
   });
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'service-status-empty';
+    empty.textContent = t('serviceStatus.allHidden');
+    els.serviceStatusPanel.replaceChildren(empty);
+    return;
+  }
   els.serviceStatusPanel.replaceChildren(...rows);
 }
 
@@ -1086,7 +1126,7 @@ async function refreshServiceStatus(options = {}) {
   state.serviceStatusBusy = true;
   renderServiceStatus();
   try {
-    state.serviceStatus = await window.tokenMonitor.getServiceStatus({ force: options.force === true });
+    state.serviceStatus = await window.tokenMonitor.getServiceStatus({ force: options.force === true, providerIds: visibleServiceProviderIds() });
   } catch (error) {
     const checkedAt = new Date().toISOString();
     state.serviceStatus = {
@@ -1110,11 +1150,55 @@ async function refreshServiceStatus(options = {}) {
   }
 }
 
-function maybeRefreshServiceStatus() {
-  if (state.breakdown !== 'status' || state.serviceStatusBusy) return;
-  const checkedAt = Date.parse(state.serviceStatus?.checkedAt || '');
-  if (Number.isFinite(checkedAt) && Date.now() - checkedAt < SERVICE_STATUS_MIN_REFRESH_MS) return;
-  refreshServiceStatus().catch(() => {});
+function formatAgo(ms) {
+  const { unit, value } = serviceStatusPresentationApi.agoBucket(ms);
+  const key = `serviceStatus.ago${unit.charAt(0).toUpperCase()}${unit.slice(1)}`;
+  return t(key, { n: value });
+}
+
+function serviceStatusRefreshMs() {
+  const value = Number(state.settings?.serviceStatusRefreshMs);
+  return value > 0 ? value : Infinity; // 0 = Manual
+}
+
+function lastServiceStatusCheckedAt() {
+  return Date.parse(state.serviceStatus?.checkedAt || '') || 0;
+}
+
+function maybeFetchServiceStatus() {
+  if (state.serviceStatusBusy) return;
+  if (visibleServiceProviderIds().length === 0) return;
+  if (!state.serviceStatus) { refreshServiceStatus().catch(() => {}); return; }
+  const intervalMs = serviceStatusRefreshMs();
+  if (Number.isFinite(intervalMs) && Date.now() - lastServiceStatusCheckedAt() >= intervalMs) {
+    refreshServiceStatus().catch(() => {});
+  }
+}
+
+function updateServiceStatusAgoLabels() {
+  const spans = els.serviceStatusPanel?.querySelectorAll('.service-status-checked') || [];
+  for (const span of spans) {
+    const checkedAt = Date.parse(span.dataset.checkedAt || '');
+    if (Number.isFinite(checkedAt)) span.textContent = formatAgo(Date.now() - checkedAt);
+  }
+}
+
+function onServiceStatusTick() {
+  if (state.breakdown !== 'status') { stopServiceStatusTicker(); return; }
+  updateServiceStatusAgoLabels();
+  maybeFetchServiceStatus();
+}
+
+function ensureServiceStatusTicker() {
+  if (state.serviceStatusTicker) return;
+  state.serviceStatusTicker = setInterval(onServiceStatusTick, 1000);
+  onServiceStatusTick();
+}
+
+function stopServiceStatusTicker() {
+  if (!state.serviceStatusTicker) return;
+  clearInterval(state.serviceStatusTicker);
+  state.serviceStatusTicker = null;
 }
 
 function nextBreakdown(value) {
@@ -1276,6 +1360,7 @@ function render() {
   els.breakdownToggle.textContent = breakdownLabel(deviceText);
   els.breakdownToggle.removeAttribute('title');
   els.shell.classList.toggle('session-mode', state.breakdown === 'session');
+  if (state.breakdown === 'status') ensureServiceStatusTicker(); else stopServiceStatusTicker();
   if (state.breakdown === 'limits') {
     els.breakdown.classList.add('hidden');
     els.serviceStatusPanel?.classList.add('hidden');
@@ -1286,7 +1371,6 @@ function render() {
     els.limitsPanel.classList.add('hidden');
     els.serviceStatusPanel?.classList.remove('hidden');
     renderServiceStatus();
-    maybeRefreshServiceStatus();
   } else if (state.openSession) {
     // session-detail view replaces the breakdown list; keep both the list and
     // limits hidden so a periodic re-render doesn't surface them over the detail.
@@ -1930,12 +2014,14 @@ function pinIcon() {
 function preferenceListForKind(kind) {
   if (kind === 'client') return els.clientDisplayList;
   if (kind === 'view') return els.viewDisplayList;
+  if (kind === 'statusProvider') return document.getElementById('serviceProviderList');
   return els.limitProviderCheckboxes;
 }
 
 function preferenceItemAttribute(kind) {
   if (kind === 'client') return 'client';
   if (kind === 'view') return 'view';
+  if (kind === 'statusProvider') return 'statusProvider';
   return 'provider';
 }
 
@@ -1945,7 +2031,9 @@ function preferenceRows(kind) {
     ? '.tool-preference-row[data-client]'
     : kind === 'view'
       ? '.view-preference-row[data-view]'
-      : '.limit-provider-row[data-provider]';
+      : kind === 'statusProvider'
+        ? '.status-provider-row[data-status-provider]'
+        : '.limit-provider-row[data-provider]';
   return Array.from(list?.querySelectorAll(selector) || []);
 }
 
@@ -1997,7 +2085,7 @@ function startPreferenceDrag(event, kind, id) {
   const order = preferenceOrder(kind);
   preferenceDrag = { kind, id, pointerId: event.pointerId, originalOrder: order, order, changed: false, handle: event.currentTarget };
   event.currentTarget.setPointerCapture?.(event.pointerId);
-  event.currentTarget.closest('[data-client], [data-provider], [data-view]')?.classList.add('is-dragging');
+  event.currentTarget.closest('[data-client], [data-provider], [data-view], [data-status-provider]')?.classList.add('is-dragging');
   setPreferencePointerListeners(true);
   applyPreferenceLiveOrder(kind, event.clientY);
 }
@@ -2049,7 +2137,9 @@ function createPreferenceOrderHandle({ kind, id, label, count }) {
     ? 'settings.tools.reorderClient'
     : kind === 'view'
       ? 'settings.views.reorderView'
-      : 'settings.limits.reorderProvider', { name: label });
+      : kind === 'statusProvider'
+        ? 'serviceStatus.reorderProvider'
+        : 'settings.limits.reorderProvider', { name: label });
   handle.setAttribute('aria-label', handle.title);
   handle.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown Home End');
   handle.disabled = count <= 1;
@@ -2095,7 +2185,107 @@ function renderViewPreferences() {
     actions.append(visibility, handle);
     row.append(name, actions);
     els.viewDisplayList.appendChild(row);
+    if (id === 'status') {
+      row.classList.add('has-subgroup');
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = `view-subgroup-toggle${state.serviceProvidersExpanded ? ' is-expanded' : ''}`;
+      toggle.title = t('serviceStatus.expandProviders', { name: label });
+      toggle.setAttribute('aria-label', toggle.title);
+      toggle.setAttribute('aria-expanded', String(Boolean(state.serviceProvidersExpanded)));
+      toggle.textContent = state.serviceProvidersExpanded ? '▾' : '▸';
+      toggle.addEventListener('click', () => {
+        state.serviceProvidersExpanded = !state.serviceProvidersExpanded;
+        renderViewPreferences();
+      });
+      actions.insertBefore(toggle, actions.firstChild);
+      if (state.serviceProvidersExpanded) {
+        els.viewDisplayList.appendChild(renderServiceProviderList());
+      }
+    }
   }
+}
+
+function renderServiceProviderList() {
+  const wrap = document.createElement('div');
+  wrap.id = 'serviceProviderList';
+  wrap.className = 'status-provider-list';
+  const hidden = hiddenServiceProviderSet();
+  const providers = serviceStatusProviderPreferencesApi.orderedOptions(SERVICE_PROVIDER_OPTIONS, state.settings?.serviceProviderDisplayOrder);
+  const hasCustomOrder = serviceStatusProviderPreferencesApi.hasCustomOrder(state.settings?.serviceProviderDisplayOrder);
+  const header = document.createElement('div');
+  header.className = 'settings-note-row status-provider-header';
+  const note = document.createElement('p');
+  note.className = 'settings-note';
+  note.textContent = t('serviceStatus.providersNote');
+  const headerActions = document.createElement('div');
+  headerActions.className = 'tool-header-actions';
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'tool-header-action';
+  reset.textContent = '↺';
+  reset.title = t('settings.views.resetOrder');
+  reset.setAttribute('aria-label', reset.title);
+  reset.disabled = !hasCustomOrder;
+  reset.addEventListener('click', () => void resetServiceProviderOrder());
+  const showAll = document.createElement('button');
+  showAll.type = 'button';
+  showAll.className = 'tool-header-action';
+  const showAllEye = document.createElement('span');
+  showAllEye.className = 'tool-header-eye';
+  showAllEye.setAttribute('aria-hidden', 'true');
+  showAll.append(showAllEye);
+  showAll.title = t('settings.views.showAll');
+  showAll.setAttribute('aria-label', showAll.title);
+  showAll.disabled = hidden.size === 0;
+  showAll.addEventListener('click', () => void showAllServiceProviders());
+  headerActions.append(reset, showAll);
+  header.append(note, headerActions);
+  wrap.append(header);
+  const SERVICE_STATUS_REFRESH_OPTIONS = [0, 60000, 120000, 300000, 900000, 1800000];
+  const intervalRow = document.createElement('label');
+  intervalRow.className = 'status-provider-interval';
+  const intervalLabel = document.createElement('span');
+  intervalLabel.textContent = t('serviceStatus.refreshEvery');
+  const select = document.createElement('select');
+  select.id = 'serviceStatusRefreshSelect';
+  const currentMs = Number(state.settings?.serviceStatusRefreshMs) || 0;
+  for (const ms of SERVICE_STATUS_REFRESH_OPTIONS) {
+    const option = document.createElement('option');
+    option.value = String(ms);
+    option.textContent = ms === 0 ? t('serviceStatus.refreshManual') : t('serviceStatus.refreshMinutes', { n: ms / 60000 });
+    if (ms === currentMs) option.selected = true;
+    select.appendChild(option);
+  }
+  select.addEventListener('change', () => void saveSettings({ serviceStatusRefreshMs: Number(select.value) }));
+  intervalRow.append(intervalLabel, select);
+  wrap.append(intervalRow);
+  for (const { id, label } of providers) {
+    const isHidden = hidden.has(id);
+    const row = document.createElement('div');
+    row.className = 'status-provider-row';
+    row.dataset.statusProvider = id;
+    row.classList.toggle('is-hidden', isHidden);
+    const name = document.createElement('div');
+    name.className = 'tool-preference-name';
+    name.textContent = label;
+    const visibility = document.createElement('button');
+    visibility.type = 'button';
+    visibility.className = `tool-visibility-button${isHidden ? ' is-hidden' : ''}`;
+    visibility.dataset.statusProvider = id;
+    visibility.title = t(isHidden ? 'serviceStatus.showProvider' : 'serviceStatus.hideProvider', { name: label });
+    visibility.setAttribute('aria-label', visibility.title);
+    visibility.setAttribute('aria-pressed', String(!isHidden));
+    visibility.append(visibilityIcon(isHidden));
+    visibility.addEventListener('click', () => onServiceProviderVisibilityToggle(id));
+    const handle = createPreferenceOrderHandle({ kind: 'statusProvider', id, label, count: providers.length });
+    const actions = document.createElement('div');
+    actions.className = 'tool-preference-actions';
+    actions.append(visibility, handle);
+    row.append(name, actions);
+    wrap.append(row);
+  }
+  return wrap;
 }
 
 function renderToolPreferences() {
@@ -2295,9 +2485,41 @@ async function onViewDisplayReorder(viewId, targetIndex) {
   await saveSettings({ viewDisplayOrder: next });
 }
 
+function hiddenServiceProviderSet() {
+  return new Set(serviceStatusProviderPreferencesApi.normalizeHidden(state.settings?.hiddenServiceProviders, SERVICE_PROVIDER_OPTIONS).split(',').filter(Boolean));
+}
+
+async function onServiceProviderVisibilityToggle(providerId) {
+  const hidden = hiddenServiceProviderSet();
+  if (hidden.has(providerId)) hidden.delete(providerId);
+  else hidden.add(providerId);
+  await saveSettings({ hiddenServiceProviders: Array.from(hidden).join(',') });
+}
+
+async function onServiceProviderMove(providerId, direction) {
+  const next = serviceStatusProviderPreferencesApi.moveOrder(state.settings?.serviceProviderDisplayOrder, SERVICE_PROVIDER_OPTIONS, providerId, direction);
+  await saveSettings({ serviceProviderDisplayOrder: next });
+}
+
+async function onServiceProviderReorder(providerId, targetIndex) {
+  const current = serviceStatusProviderPreferencesApi.normalizeOrder(state.settings?.serviceProviderDisplayOrder, SERVICE_PROVIDER_OPTIONS).join(',');
+  const next = serviceStatusProviderPreferencesApi.reorderOrder(state.settings?.serviceProviderDisplayOrder, SERVICE_PROVIDER_OPTIONS, providerId, targetIndex);
+  if (next === current) return;
+  await saveSettings({ serviceProviderDisplayOrder: next });
+}
+
+async function resetServiceProviderOrder() {
+  await saveSettings({ serviceProviderDisplayOrder: '' });
+}
+
+async function showAllServiceProviders() {
+  await saveSettings({ hiddenServiceProviders: '' });
+}
+
 async function onPreferenceReorder(kind, id, targetIndex) {
   if (kind === 'client') await onClientDisplayReorder(id, targetIndex);
   else if (kind === 'view') await onViewDisplayReorder(id, targetIndex);
+  else if (kind === 'statusProvider') await onServiceProviderReorder(id, targetIndex);
   else await onLimitProviderReorder(id, targetIndex);
 }
 
@@ -2324,6 +2546,11 @@ async function onPreferenceOrderCommit(kind, order, id) {
     if (value !== current) await saveSettings({ viewDisplayOrder: value });
     return;
   }
+  if (kind === 'statusProvider') {
+    const current = serviceStatusProviderPreferencesApi.normalizeOrder(state.settings?.serviceProviderDisplayOrder, SERVICE_PROVIDER_OPTIONS).join(',');
+    if (value !== current) await saveSettings({ serviceProviderDisplayOrder: value });
+    return;
+  }
   const current = limitProviderOrderApi.normalizeLimitProviderOrder(state.settings?.limitProviderOrder, LIMIT_PROVIDERS).join(',');
   if (value !== current) await saveSettings({ limitProviderOrder: value });
 }
@@ -2334,6 +2561,7 @@ function onPreferenceOrderKeydown(event, kind, id) {
     event.preventDefault();
     if (kind === 'client') void onClientDisplayMove(id, moves[event.key]);
     else if (kind === 'view') void onViewDisplayMove(id, moves[event.key]);
+    else if (kind === 'statusProvider') void onServiceProviderMove(id, moves[event.key]);
     else void onLimitProviderMove(id, moves[event.key]);
     return;
   }

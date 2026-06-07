@@ -143,6 +143,9 @@ function defaultSettings() {
     pinnedClients: '',
     viewDisplayOrder: '',
     hiddenViews: defaultViewDisplayPreferences().hiddenViews,
+    serviceProviderDisplayOrder: '',
+    hiddenServiceProviders: '',
+    serviceStatusRefreshMs: 60000,
     archivedClientUsage: { version: 1, clients: {} },
     allTimeSince: process.env.TOKEN_MONITOR_ALL_TIME_SINCE || '2024-01-01',
     limitsEnabled: parseBoolean(process.env.TOKEN_MONITOR_LIMITS_ENABLED, true),
@@ -192,6 +195,12 @@ function migrateClientDisplayOrder(value) {
   const raw = Array.isArray(value) ? value : String(value || '').split(',');
   const hasKnownClient = raw.some((item) => known.has(String(item || '').trim().toLowerCase()));
   return hasKnownClient ? normalizeClientDisplayOrder(value, DEFAULT_CLIENT_LIST).join(',') : '';
+}
+
+const SERVICE_STATUS_REFRESH_VALUES = new Set([0, 60000, 120000, 300000, 900000, 1800000]);
+function normalizeServiceStatusRefreshMs(value) {
+  const n = Number(value);
+  return SERVICE_STATUS_REFRESH_VALUES.has(n) ? n : 60000;
 }
 
 function migrateViewDisplayOrder(value) {
@@ -552,6 +561,15 @@ function readSettings() {
     }
     if (saved.hiddenViews !== undefined) {
       merged.hiddenViews = normalizeHiddenViews(saved.hiddenViews, DEFAULT_VIEW_LIST);
+    }
+    if (saved.serviceProviderDisplayOrder !== undefined) {
+      merged.serviceProviderDisplayOrder = String(saved.serviceProviderDisplayOrder || '');
+    }
+    if (saved.hiddenServiceProviders !== undefined) {
+      merged.hiddenServiceProviders = String(saved.hiddenServiceProviders || '');
+    }
+    if (saved.serviceStatusRefreshMs !== undefined) {
+      merged.serviceStatusRefreshMs = normalizeServiceStatusRefreshMs(saved.serviceStatusRefreshMs);
     }
     if (saved.windowBehavior === undefined && saved.alwaysOnTop !== undefined) {
       merged.windowBehavior = saved.alwaysOnTop ? 'floating' : 'normal';
@@ -1677,6 +1695,9 @@ app.whenReady().then(() => {
       pinnedClients: patch.pinnedClients !== undefined ? normalizePinnedClients(patch.pinnedClients, DEFAULT_CLIENT_LIST) : normalizePinnedClients(settings.pinnedClients, DEFAULT_CLIENT_LIST),
       viewDisplayOrder: patch.viewDisplayOrder !== undefined ? migrateViewDisplayOrder(patch.viewDisplayOrder) : (settings.viewDisplayOrder || ''),
       hiddenViews: patch.hiddenViews !== undefined ? normalizeHiddenViews(patch.hiddenViews, DEFAULT_VIEW_LIST) : normalizeHiddenViews(settings.hiddenViews, DEFAULT_VIEW_LIST),
+      serviceProviderDisplayOrder: patch.serviceProviderDisplayOrder !== undefined ? String(patch.serviceProviderDisplayOrder || '') : (settings.serviceProviderDisplayOrder || ''),
+      hiddenServiceProviders: patch.hiddenServiceProviders !== undefined ? String(patch.hiddenServiceProviders || '') : (settings.hiddenServiceProviders || ''),
+      serviceStatusRefreshMs: normalizeServiceStatusRefreshMs(patch.serviceStatusRefreshMs ?? settings.serviceStatusRefreshMs),
       limitsRefreshMs: normalizeLimitsRefreshMs(patch.limitsRefreshMs ?? settings.limitsRefreshMs),
       showLimitSource: parseBoolean(patch.showLimitSource ?? settings.showLimitSource, false),
       zoomFactor: clampZoom(patch.zoomFactor ?? settings.zoomFactor),
@@ -1842,7 +1863,10 @@ app.whenReady().then(() => {
     return readSessionDetail({ client, sessionId, period, sessionCost, home: os.homedir() });
   });
   ipcMain.handle('stream:status', () => ({ connected: streamConnected, mode }));
-  ipcMain.handle('serviceStatus:get', (_event, options) => serviceStatusClient.getServiceStatus({ force: Boolean(options?.force) }));
+  ipcMain.handle('serviceStatus:get', (_event, options) => serviceStatusClient.getServiceStatus({
+    force: Boolean(options?.force),
+    providerIds: Array.isArray(options?.providerIds) ? options.providerIds : null
+  }));
   ipcMain.handle('hub:getInfo', () => getHubInfo());
   ipcMain.handle('hub:regenerateSecret', () => {
     settings.hubHostSecret = generateHubSecret();
