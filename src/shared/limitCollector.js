@@ -147,6 +147,16 @@ function codexAuthPath(env = process.env) {
   return path.join(base, 'auth.json');
 }
 
+function envValue(env = {}, name) {
+  if (Object.prototype.hasOwnProperty.call(env, name)) return env[name];
+  const key = Object.keys(env).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  return key ? env[key] : undefined;
+}
+
+function pathApiForPlatform(platform = process.platform) {
+  return platform === 'win32' ? path.win32 : path;
+}
+
 function uniqueStrings(values) {
   const seen = new Set();
   const out = [];
@@ -914,11 +924,20 @@ function withCodexPathHints(env = process.env, platform = process.platform) {
   const delimiter = pathDelimiterForPlatform(platform);
   const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH';
   const currentPath = env[pathKey] || '';
+  const pathApi = pathApiForPlatform(platform);
   const hints = [];
   if (platform === 'win32') {
-    if (env.APPDATA) hints.push(path.join(env.APPDATA, 'npm'));
-    if (env.LOCALAPPDATA) hints.push(path.join(env.LOCALAPPDATA, 'pnpm'));
-    if (env.USERPROFILE) hints.push(path.join(env.USERPROFILE, '.bun', 'bin'));
+    const appData = envValue(env, 'APPDATA');
+    const localAppData = envValue(env, 'LOCALAPPDATA');
+    const userProfile = envValue(env, 'USERPROFILE');
+    if (appData) hints.push(pathApi.join(appData, 'npm'));
+    if (localAppData) {
+      hints.push(
+        pathApi.join(localAppData, 'pnpm'),
+        pathApi.join(localAppData, 'Microsoft', 'WindowsApps')
+      );
+    }
+    if (userProfile) hints.push(pathApi.join(userProfile, '.bun', 'bin'));
   } else {
     hints.push('/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin');
     if (env.HOME) {
@@ -937,8 +956,9 @@ function withCodexPathHints(env = process.env, platform = process.platform) {
 
 function existingCodexCommandCandidates(candidates, deps = {}) {
   const existsSync = deps.existsSync || fs.existsSync;
+  const pathApi = pathApiForPlatform(deps.platform || process.platform);
   return candidates.filter((candidate) => {
-    if (!path.isAbsolute(candidate)) return true;
+    if (!pathApi.isAbsolute(candidate)) return true;
     return existsSync(candidate);
   });
 }
@@ -964,7 +984,7 @@ function spawnCodexAppServer(deps = {}) {
   const spawnFn = deps.spawn || spawn;
   const env = deps.env || process.env;
   const platform = deps.platform || process.platform;
-  const command = deps.codexCommand || existingCodexCommandCandidates(codexCommandCandidates(env, platform), deps)[0];
+  const command = deps.codexCommand || existingCodexCommandCandidates(codexCommandCandidates(env, platform, deps), deps)[0];
   if (!command) throw errorWithStatus('notConfigured', 'Codex CLI not found');
   const spec = codexSpawnSpec(command, platform);
   return spawnFn(spec.command, spec.args, {
@@ -977,21 +997,114 @@ function codexRpcCommandCandidates(deps = {}) {
   const env = deps.env || process.env;
   const platform = deps.platform || process.platform;
   if (deps.codexCommand) return [deps.codexCommand];
-  return existingCodexCommandCandidates(codexCommandCandidates(env, platform), deps);
+  return existingCodexCommandCandidates(codexCommandCandidates(env, platform, deps), deps);
 }
 
-function codexCommandCandidates(env = process.env, platform = process.platform) {
+function windowsCodexBinCandidates(binDir, deps = {}) {
+  const pathApi = pathApiForPlatform('win32');
+  const candidates = [pathApi.join(binDir, 'codex.exe')];
+  const readdirSync = deps.readdirSync || fs.readdirSync;
+  let entries = [];
+  try {
+    entries = readdirSync(binDir, { withFileTypes: true });
+  } catch (_) {
+    return candidates;
+  }
+  for (const entry of entries) {
+    const name = typeof entry === 'string' ? entry : entry?.name;
+    if (typeof entry?.isDirectory === 'function' && !entry.isDirectory()) continue;
+    if (!/^[A-Za-z0-9._-]+$/.test(name || '')) continue;
+    candidates.push(pathApi.join(binDir, name, 'codex.exe'));
+  }
+  return candidates;
+}
+
+function windowsCodexPackageVersion(name) {
+  const match = /^OpenAI\.Codex_(\d+(?:\.\d+)*)_/.exec(String(name || ''));
+  if (!match) return [];
+  return match[1].split('.').map((part) => Number(part) || 0);
+}
+
+function compareWindowsCodexPackages(a, b) {
+  const aName = typeof a === 'string' ? a : a?.name;
+  const bName = typeof b === 'string' ? b : b?.name;
+  const aVersion = windowsCodexPackageVersion(aName);
+  const bVersion = windowsCodexPackageVersion(bName);
+  const length = Math.max(aVersion.length, bVersion.length);
+  for (let i = 0; i < length; i += 1) {
+    const diff = (bVersion[i] || 0) - (aVersion[i] || 0);
+    if (diff) return diff;
+  }
+  return String(aName || '').localeCompare(String(bName || ''));
+}
+
+function windowsCodexStoreCandidates(env = process.env, deps = {}) {
+  const pathApi = pathApiForPlatform('win32');
+  const candidates = [];
+  const localAppData = envValue(env, 'LOCALAPPDATA');
+  if (localAppData) {
+    candidates.push(...windowsCodexBinCandidates(pathApi.join(localAppData, 'OpenAI', 'Codex', 'bin'), deps));
+    const packagesDir = pathApi.join(localAppData, 'Packages');
+    let packageEntries = [];
+    try {
+      packageEntries = (deps.readdirSync || fs.readdirSync)(packagesDir, { withFileTypes: true });
+    } catch (_) {}
+    for (const entry of packageEntries.sort(compareWindowsCodexPackages)) {
+      const name = typeof entry === 'string' ? entry : entry?.name;
+      if (typeof entry?.isDirectory === 'function' && !entry.isDirectory()) continue;
+      if (!/^OpenAI\.Codex_[^\\/:*?"<>|]+$/.test(name || '')) continue;
+      candidates.push(...windowsCodexBinCandidates(
+        pathApi.join(packagesDir, name, 'LocalCache', 'Local', 'OpenAI', 'Codex', 'bin'),
+        deps
+      ));
+    }
+    const aliasDir = pathApi.join(localAppData, 'Microsoft', 'WindowsApps');
+    candidates.push(pathApi.join(aliasDir, 'codex.exe'), pathApi.join(aliasDir, 'Codex.exe'));
+  }
+
+  const readdirSync = deps.readdirSync || fs.readdirSync;
+  for (const root of uniqueStrings([
+    envValue(env, 'PROGRAMFILES'),
+    envValue(env, 'ProgramW6432')
+  ])) {
+    const appxDir = pathApi.join(root, 'WindowsApps');
+    let entries = [];
+    try {
+      entries = readdirSync(appxDir, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries.sort(compareWindowsCodexPackages)) {
+      const name = typeof entry === 'string' ? entry : entry?.name;
+      if (typeof entry?.isDirectory === 'function' && !entry.isDirectory()) continue;
+      if (!/^OpenAI\.Codex_[^\\/:*?"<>|]+$/.test(name || '')) continue;
+      candidates.push(
+        pathApi.join(appxDir, name, 'app', 'resources', 'codex.exe'),
+        pathApi.join(appxDir, name, 'app', 'Codex.exe')
+      );
+    }
+  }
+  return candidates;
+}
+
+function codexCommandCandidates(env = process.env, platform = process.platform, deps = {}) {
   if (env.TOKEN_MONITOR_CODEX_COMMAND) return [env.TOKEN_MONITOR_CODEX_COMMAND];
+  const pathApi = pathApiForPlatform(platform);
   const candidates = [];
   if (platform === 'darwin') {
     candidates.push('/Applications/Codex.app/Contents/Resources/codex');
   } else if (platform === 'win32') {
-    if (env.LOCALAPPDATA) candidates.push(path.join(env.LOCALAPPDATA, 'Programs', 'Codex', 'resources', 'codex.exe'));
-    if (env.PROGRAMFILES) candidates.push(path.join(env.PROGRAMFILES, 'Codex', 'resources', 'codex.exe'));
-    if (env['PROGRAMFILES(X86)']) candidates.push(path.join(env['PROGRAMFILES(X86)'], 'Codex', 'resources', 'codex.exe'));
-    if (env.APPDATA) candidates.push(path.join(env.APPDATA, 'npm', 'codex.cmd'));
+    const localAppData = envValue(env, 'LOCALAPPDATA');
+    const programFiles = envValue(env, 'PROGRAMFILES');
+    const programFilesX86 = envValue(env, 'PROGRAMFILES(X86)');
+    const appData = envValue(env, 'APPDATA');
+    if (localAppData) candidates.push(pathApi.join(localAppData, 'Programs', 'Codex', 'resources', 'codex.exe'));
+    if (programFiles) candidates.push(pathApi.join(programFiles, 'Codex', 'resources', 'codex.exe'));
+    if (programFilesX86) candidates.push(pathApi.join(programFilesX86, 'Codex', 'resources', 'codex.exe'));
+    candidates.push(...windowsCodexStoreCandidates(env, deps));
+    if (appData) candidates.push(pathApi.join(appData, 'npm', 'codex.cmd'));
     candidates.push('codex.cmd', 'codex.exe');
-    if (env.LOCALAPPDATA) candidates.push(path.join(env.LOCALAPPDATA, 'Programs', 'Codex', 'Codex.exe'));
+    if (localAppData) candidates.push(pathApi.join(localAppData, 'Programs', 'Codex', 'Codex.exe'));
   }
   candidates.push('codex');
   return uniqueStrings(candidates);

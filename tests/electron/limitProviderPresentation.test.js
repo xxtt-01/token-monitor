@@ -28,7 +28,7 @@ function functionBody(source, name, nextName) {
 
 test('capability tags explain how each provider is collected in settings', () => {
   assert.deepEqual(limitProviderCapabilityTags('claude'), ['Auto', 'OAuth/CLI']);
-  assert.deepEqual(limitProviderCapabilityTags('codex'), ['Auto', 'CLI RPC']);
+  assert.deepEqual(limitProviderCapabilityTags('codex'), ['Auto', 'App/CLI RPC']);
   assert.deepEqual(limitProviderCapabilityTags('cursor'), ['Manual login', 'Web']);
   assert.deepEqual(limitProviderCapabilityTags('antigravity'), ['App must be open', 'RPC']);
   assert.deepEqual(limitProviderCapabilityTags('opencode'), ['Local/Web', 'Manual login']);
@@ -57,7 +57,7 @@ test('detected settings tags show only current source after status', () => {
   assert.deepEqual(
     limitProviderSettingsTags({ provider: 'codex', status: 'ok', source: 'rpc' })
       .map((tag) => tag.label),
-    ['Live', 'CLI RPC']
+    ['Live', 'App/CLI RPC']
   );
   assert.deepEqual(
     limitProviderSettingsTags({ provider: 'opencode', status: 'ok', source: 'web' })
@@ -87,7 +87,7 @@ test('remote synced provider tags show the selected source device and local avai
 
   assert.deepEqual(
     limitProviderSettingsTags(provider, provenance).map((tag) => tag.key || tag.label),
-    ['Live', 'CLI RPC', 'settings.limits.device.from', 'settings.limits.device.localAlso']
+    ['Live', 'App/CLI RPC', 'settings.limits.device.from', 'settings.limits.device.localAlso']
   );
   assert.equal(provenance.selectedDeviceLabel, 'work-mac');
   assert.equal(limitProviderMainDeviceLabel(provenance, { showSource: false }), '');

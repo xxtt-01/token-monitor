@@ -9,13 +9,13 @@
     oauth: 'OAuth',
     cli: 'CLI',
     web: 'Web',
-    rpc: 'CLI RPC',
+    rpc: 'App/CLI RPC',
     local: 'Local'
   };
 
   const PROVIDER_SOURCE_LABELS = {
     claude: { oauth: 'OAuth', cli: 'CLI' },
-    codex: { rpc: 'CLI RPC' },
+    codex: { rpc: 'App/CLI RPC' },
     cursor: { web: 'Web' },
     antigravity: { rpc: 'RPC' },
     opencode: { local: 'Local', web: 'Web' }
@@ -23,7 +23,7 @@
 
   const CAPABILITY_TAGS = {
     claude: ['Auto', 'OAuth/CLI'],
-    codex: ['Auto', 'CLI RPC'],
+    codex: ['Auto', 'App/CLI RPC'],
     cursor: ['Manual login', 'Web'],
     antigravity: ['App must be open', 'RPC'],
     opencode: ['Local/Web', 'Manual login']
