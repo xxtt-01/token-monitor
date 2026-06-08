@@ -2699,9 +2699,24 @@ async function showAllViews() {
   await saveSettings({ hiddenViews: '' });
 }
 
+function preserveSettingsPanelScroll(callback) {
+  const panel = els.settingsPanel;
+  if (!panel || panel.classList.contains('hidden')) return callback();
+  const scrollTop = panel.scrollTop;
+  const scrollLeft = panel.scrollLeft;
+  const restore = () => {
+    panel.scrollTop = scrollTop;
+    panel.scrollLeft = scrollLeft;
+  };
+  const result = callback();
+  restore();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore);
+  return result;
+}
+
 async function saveSettings(patch) {
   state.settings = await window.tokenMonitor.updateSettings(patch);
-  syncSettingsForm();
+  preserveSettingsPanelScroll(syncSettingsForm);
   restartTimer();
   maybeUpdateBarsIcon();
 }

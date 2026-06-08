@@ -203,6 +203,14 @@ test('trend history collection is controlled from an expandable Trends settings 
   assert.match(css, /\.trend-settings-list/);
 });
 
+test('settings saves preserve the settings panel scroll position during rerender', () => {
+  const app = readRendererFile('app.js');
+  const saveBody = functionBody(app, 'saveSettings', 'updateTitleFit');
+  assert.match(app, /function preserveSettingsPanelScroll\(callback\)/);
+  assert.match(saveBody, /preserveSettingsPanelScroll\(syncSettingsForm\)/);
+  assert.doesNotMatch(saveBody, /\bsyncSettingsForm\(\);/);
+});
+
 test('general section owns app-level preferences before startup and updates', () => {
   const html = readRendererFile('index.html');
   const generalSection = html.slice(
