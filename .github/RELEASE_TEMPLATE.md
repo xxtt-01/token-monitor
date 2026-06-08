@@ -5,15 +5,14 @@
 ## What's changed
 
 ### Added
-- Added DeepSeek API balance as an AI Tool Limits provider, with local account setup, `.env` support, balance history, and a DeepSeek icon across the limits/status surfaces.
-- Expanded the experimental Status view with Cursor and DeepSeek service status, affected components, provider visibility/order controls, relative checked times, and configurable re-check intervals.
+- Added cross-device usage Trends and a new Usage Dashboard window. This feature is off by default: go to **Settings → Main Screen** and enable **Show Trends** to use it. Once enabled, click the chart in the middle of the Trends view to open the dashboard. The dashboard features a token activity heatmap and allows switching between bar charts and K-line charts to track usage across multiple machines.
+- Added a new toggle to opt-in to usage trend history collection.
 
 ### Improved
-- Refined the Status provider controls and settings icon so the service list is easier to scan and configure.
-- Codex limit sources now label CLI, app RPC, and Windows Store app paths more clearly.
+- Preserved the Settings panel scroll position when saving.
 
 ### Fixed
-- Fixed Windows Store Codex app detection; the Limits UI now correctly shows whether Codex limits came from the app or CLI.
+- Fixed visual corner rendering artifacts on Windows (now using a unified 8px radius) and on older macOS versions with vibrancy effects.
 
 ## Which file should I download?
 
@@ -48,15 +47,14 @@ open-source: https://github.com/junhoyeo/tokscale
 ## 更新内容
 
 ### 新增
-- 新增 DeepSeek API 余额作为「AI 工具额度」来源，支持本机账号设置、`.env` 配置、余额历史记录，并在额度/状态界面显示 DeepSeek 图标。
-- 扩展实验性的「状态」视图：新增 Cursor 与 DeepSeek 服务状态、受影响组件、服务显示/排序设置、相对检查时间，以及可配置的自动重查间隔。
+- 新增跨设备「趋势」视图与全新「使用仪表板」窗口。此功能默认关闭：请前往 **设置 → 主界面**，开启 **显示 趋势** 即可使用。启用后，点击趋势视图中间的图表即可打开仪表板。仪表板内包含 Token 活动热力图，并支持在柱状图与 K 线图之间切换，以便追踪多台机器的活动。
+- 新增趋势历史记录采集的自愿开启（opt-in）开关。
 
 ### 改进
-- 优化「状态」视图的服务设置控件和设置图标，服务列表更容易浏览和调整。
-- Codex 额度来源现在能更清楚地区分 CLI、App RPC 与 Windows Store App 路径。
+- 保存设置时，现在会保留设置面板的滚动位置。
 
 ### 修复
-- 修复 Windows Store 版 Codex App 的侦测；「额度」界面现在会正确显示 Codex 来源是 App 还是 CLI。
+- 修复 Windows（现统一为 8px 圆角）与开启 Vibrancy 效果的旧版 macOS 上，窗口角落的渲染瑕疵。
 
 ## 应该下载哪个文件？
 
