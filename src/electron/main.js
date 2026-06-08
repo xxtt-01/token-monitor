@@ -39,7 +39,8 @@ const {
   normalizeArchivedClientUsage,
   pruneArchivedClientUsage
 } = require('../shared/clientUsageArchive');
-const { aggregateDevices } = require('../shared/usage');
+const { aggregateDevices, aggregateHistory } = require('../shared/usage');
+const { historyPreview } = require('../shared/history');
 const { readSessionDetail } = require('../shared/sessionDetail');
 const { startDiscordRpc, stopDiscordRpc, updateDiscordRpc } = require('./discordRpc');
 const { buildTrayIcon, createTray, formatTrayText, pickUsageTrayIconId, popoverBounds } = require('./tray');
@@ -96,6 +97,7 @@ const DEFAULT_CLIENT_LIST = DEFAULT_CLIENTS.split(',').map((id) => ({ id }));
 const DEFAULT_VIEW_LIST = ['tool', 'status', 'device', 'model', 'session', 'limits'].map((id) => ({ id }));
 
 let mainWindow = null;
+let dashboardWindow = null;
 let settingsPath = null;
 let settings = null;
 let rendererViewState = normalizeInitialRendererViewState();
@@ -716,6 +718,11 @@ function applyNativeMaterial(source = settings) {
   // so toggling is handled by rebuildWindow() instead.
 }
 
+function withHistoryPreview(stats, devices) {
+  stats.historyPreview = historyPreview(aggregateHistory(devices, 0));
+  return stats;
+}
+
 let mode = 'idle';
 let localCollectorHandle = null;
 let localDevice = null;
@@ -876,6 +883,7 @@ function startSyncCollector() {
     agentVersion: appVersion(),
     agentRuntime: 'electron-widget',
     intervalMs: 5 * 60 * 1000,
+    historyIntervalMs: Number(process.env.TOKEN_MONITOR_HISTORY_INTERVAL_MS || 15 * 60 * 1000),
     watchEnabled: true,
     watchDebounceMs: 1500,
     limitsEnabled: settings.limitsEnabled !== false,
@@ -956,6 +964,7 @@ function startLocalCollector() {
     agentVersion: appVersion(),
     agentRuntime: 'electron-widget',
     intervalMs: 5 * 60 * 1000,
+    historyIntervalMs: Number(process.env.TOKEN_MONITOR_HISTORY_INTERVAL_MS || 15 * 60 * 1000),
     watchEnabled: true,
     watchDebounceMs: 1500,
     limitsEnabled: settings.limitsEnabled !== false,
@@ -967,7 +976,7 @@ function startLocalCollector() {
       const visibleSummary = summaryWithArchivedClientUsage(summary);
       localDevice = { ...visibleSummary, receivedAt: new Date().toISOString() };
       lastCollectedDevice = localDevice;
-      localStats = aggregateDevices([localDevice], 0);
+      localStats = withHistoryPreview(aggregateDevices([localDevice], 0), [localDevice]);
       updateDiscordRpc(localStats, settings.currency);
       sendPush({ event: 'stats', data: { type: 'stats', reason, stats: localStats, at: new Date().toISOString() } });
       sendStatus(true, { reason });
@@ -1272,13 +1281,13 @@ async function fetchStats(options = {}) {
   if (mode === 'local') {
     if (force && localCollectorHandle) await localCollectorHandle.tick('manual', tickOptions);
     if (localStats) return localStats;
-    return aggregateDevices(localDevice ? [localDevice] : [], 0);
+    return withHistoryPreview(aggregateDevices(localDevice ? [localDevice] : [], 0), localDevice ? [localDevice] : []);
   }
   if (force && syncCollectorHandle && !isExternalAgentActive()) {
     await syncCollectorHandle.tick('manual', tickOptions);
   }
   const { url: hubUrl, secret } = effectiveHubConfig();
-  if (!hubUrl) return aggregateDevices([], 0);
+  if (!hubUrl) return withHistoryPreview(aggregateDevices([], 0), []);
   const url = `${hubUrl.replace(/\/$/, '')}/api/stats`;
   const response = await fetch(url, { headers: secret ? { authorization: `Bearer ${secret}` } : {} });
   if (!response.ok) throw new Error(`Hub ${response.status}: ${(await response.text()).slice(0, 200)}`);
@@ -1590,6 +1599,63 @@ function replaceMainWindow(bounds, options = {}) {
       next.focus();
     }
   });
+}
+
+function createDashboardWindow() {
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+    // Reload so a reopened window always picks up the latest renderer + fresh history,
+    // instead of showing whatever was loaded when it first opened.
+    dashboardWindow.webContents.reload();
+    dashboardWindow.focus();
+    return dashboardWindow;
+  }
+  const glass = nativeBlurEnabled();
+  const win = new BrowserWindow({
+    width: 920,
+    height: 620,
+    minWidth: 560,
+    minHeight: 420,
+    frame: false,
+    transparent: true,
+    show: false,
+    backgroundColor: '#00000000',
+    icon: APP_ICON_PATH,
+    skipTaskbar: false,
+    ...(process.platform === 'darwin' && glass ? { vibrancy: 'hud', visualEffectState: 'active' } : {}),
+    ...(process.platform === 'win32' && glass ? { backgroundMaterial: 'acrylic' } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  dashboardWindow = win;
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (isAllowedExternalUrl(url)) shell.openExternal(url);
+  });
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => { dashboardWindow = null; });
+  win.loadFile(path.join(__dirname, 'renderer', 'dashboard.html'))
+    .catch((error) => console.log(`[dashboard] load failed: ${error.message}`));
+  return win;
+}
+
+async function getDashboardHistory() {
+  if (mode === 'local') {
+    if (localCollectorHandle) { try { await localCollectorHandle.tick('manual'); } catch (_) {} }
+    return aggregateHistory(localDevice ? [localDevice] : [], 0);
+  }
+  const { url: hubUrl, secret } = effectiveHubConfig();
+  if (!hubUrl) return aggregateHistory([], 0);
+  const url = `${hubUrl.replace(/\/$/, '')}/api/history`;
+  const response = await fetch(url, { headers: secret ? { authorization: `Bearer ${secret}` } : {} });
+  if (!response.ok) throw new Error(`Hub ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  return response.json();
 }
 
 let cursorStatusCache = { value: null, at: 0 };
@@ -2029,6 +2095,10 @@ app.whenReady().then(() => {
     if (settings?.trayMode) hidePopover();
     else mainWindow?.close();
   });
+  ipcMain.handle('dashboard:open', () => { createDashboardWindow(); return true; });
+  ipcMain.handle('dashboard:getHistory', () => getDashboardHistory());
+  ipcMain.on('dashboard:minimize', (event) => { BrowserWindow.fromWebContents(event.sender)?.minimize(); });
+  ipcMain.on('dashboard:close', (event) => { BrowserWindow.fromWebContents(event.sender)?.close(); });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   maybeRunBackgroundUpdateCheck();
 });

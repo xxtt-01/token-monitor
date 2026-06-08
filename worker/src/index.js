@@ -1,5 +1,6 @@
 import { publicLimits } from '../../src/shared/limits.js';
-import { aggregateDevices, mergeDeviceRecord } from '../../src/shared/usage.js';
+import { aggregateDevices, mergeDeviceRecord, aggregateHistory } from '../../src/shared/usage.js';
+import { historyPreview } from '../../src/shared/history.js';
 
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -74,7 +75,10 @@ export class HubDO {
   }
 
   async getStats() {
-    return aggregateDevices(await this.listDevices(), this.staleAfterMs);
+    const devices = await this.listDevices();
+    const stats = aggregateDevices(devices, this.staleAfterMs);
+    stats.historyPreview = historyPreview(aggregateHistory(devices, this.staleAfterMs));
+    return stats;
   }
 
   ensureHeartbeat() {
@@ -149,6 +153,11 @@ export class HubDO {
     if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/devices') {
       const devices = await this.listDevices();
       return jsonResponse(200, { devices });
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/api/history') {
+      const devices = await this.listDevices();
+      return jsonResponse(200, aggregateHistory(devices, this.staleAfterMs));
     }
 
     if (request.method === 'GET' && url.pathname === '/api/stats/stream') {

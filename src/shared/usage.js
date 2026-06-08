@@ -2,6 +2,7 @@
 
 const PERIODS = ['today', 'month', 'allTime'];
 const { aggregateLimits, normalizeLimitsSummary } = require('./limits');
+const { coerceHistory, mergeHistories } = require('./history');
 const TOKEN_KEYS = ['totalTokens', 'total_tokens', 'totalTokenCount', 'total_token_count', 'tokens', 'tokenCount', 'token_count'];
 // Additive components for a token total. `reasoning` is deliberately excluded: OpenAI/Codex report
 // reasoning_output_tokens WITHIN output_tokens (tokscale's `output` already includes it and exposes
@@ -433,6 +434,7 @@ function normalizeDeviceRecord(record) {
     limits: normalizeLimitsSummary(record.limits)
   };
   if (hasOwn(record, 'trackedClients')) normalized.trackedClients = normalizeTrackedClients(record.trackedClients);
+  if (hasOwn(record, 'history')) normalized.history = coerceHistory(record.history);
   for (const periodName of PERIODS) normalized.periods[periodName] = normalizePeriod(record[periodName] || record.periods?.[periodName]);
   return normalized;
 }
@@ -490,6 +492,7 @@ function preserveUntrackedClientUsage(existingRecord, incomingRecord, trackedCli
 function mergeDeviceRecord(existing, incoming) {
   const hasExisting = existing && typeof existing === 'object';
   const hasIncomingLimits = incoming && typeof incoming === 'object' && Object.prototype.hasOwnProperty.call(incoming, 'limits');
+  const hasIncomingHistory = incoming && typeof incoming === 'object' && Object.prototype.hasOwnProperty.call(incoming, 'history');
   const hasIncomingTrackedClients = hasOwn(incoming, 'trackedClients');
   const normalizedIncoming = normalizeDeviceRecord(incoming || {});
   if (!hasExisting) return normalizedIncoming;
@@ -497,10 +500,24 @@ function mergeDeviceRecord(existing, incoming) {
   const normalizedExisting = normalizeDeviceRecord(existing);
   if (incoming?.limitsOnly === true) normalizedIncoming.periods = normalizedExisting.periods;
   if (!hasIncomingLimits) normalizedIncoming.limits = normalizedExisting.limits;
+  if (!hasIncomingHistory && hasOwn(normalizedExisting, 'history')) normalizedIncoming.history = normalizedExisting.history;
   if (hasIncomingTrackedClients) {
     preserveUntrackedClientUsage(normalizedExisting, normalizedIncoming, normalizedIncoming.trackedClients || []);
   }
   return normalizedIncoming;
+}
+
+function aggregateHistory(devices, staleAfterMs, nowMs = Date.now()) {
+  const histories = [];
+  for (const record of devices) {
+    const normalized = normalizeDeviceRecord(record);
+    if (!hasOwn(normalized, 'history')) continue;
+    const ageMs = nowMs - Date.parse(normalized.receivedAt || normalized.updatedAt || 0);
+    const stale = Number.isFinite(ageMs) && staleAfterMs > 0 ? ageMs > staleAfterMs : false;
+    if (stale) continue;
+    histories.push(normalized.history);
+  }
+  return mergeHistories(histories);
 }
 
 function aggregateDevices(devices, staleAfterMs, nowMs = Date.now()) {
@@ -575,4 +592,4 @@ function aggregateDevices(devices, staleAfterMs, nowMs = Date.now()) {
   return aggregate;
 }
 
-module.exports = { PERIODS, aggregateDevices, emptyPeriod, extractUsageFromTokscale, mergeDeviceRecord, normalizeDeviceRecord, normalizePeriod };
+module.exports = { PERIODS, aggregateDevices, aggregateHistory, emptyPeriod, extractUsageFromTokscale, mergeDeviceRecord, normalizeDeviceRecord, normalizePeriod };

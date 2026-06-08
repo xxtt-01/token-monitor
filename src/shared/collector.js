@@ -11,6 +11,7 @@ const { appVersion } = require('./appVersion');
 const { normalizeClientsCsv } = require('./clientTracking');
 const { tokscalePackageNameForPlatform, tokscalePlatformKey } = require('./tokscalePlatform');
 const { emptyPeriod, extractUsageFromTokscale } = require('./usage');
+const { parseGraphResult, normalizeHistory } = require('./history');
 const { collectLimitsOnce, createLimitsCollector } = require('./limitCollector');
 const cursorAuth = require('./cursorAuth');
 const { findSessionFiles, codexSessionFile } = require('./sessionFiles');
@@ -111,8 +112,7 @@ function parseJsonOutput(stdout) {
   throw new Error(`Could not parse tokscale JSON output: ${text.slice(0, 300)}`);
 }
 
-function runTokscale({ clients, flags, commandTimeoutMs }) {
-  const userArgs = ['--json', '--client', clients, '--group-by', 'client,session,model', ...flags];
+function spawnTokscaleJson(userArgs, commandTimeoutMs) {
   const { bin, prefixArgs, env } = tokscaleCommand();
   return new Promise((resolve, reject) => {
     const child = spawn(bin, [...prefixArgs, ...userArgs], { env, windowsHide: true });
@@ -128,6 +128,21 @@ function runTokscale({ clients, flags, commandTimeoutMs }) {
       try { resolve(parseJsonOutput(stdout)); } catch (error) { reject(error); }
     });
   });
+}
+
+function runTokscale({ clients, flags, commandTimeoutMs }) {
+  return spawnTokscaleJson(['--json', '--client', clients, '--group-by', 'client,session,model', ...flags], commandTimeoutMs);
+}
+
+function runTokscaleGraph({ clients, commandTimeoutMs }) {
+  return spawnTokscaleJson(['graph', '--client', clients, '--no-spinner'], commandTimeoutMs);
+}
+
+function localTodayKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function isoFromDate(value) {
@@ -284,6 +299,30 @@ async function maybeSyncAntigravity(clientsCsv, logger) {
   });
 }
 
+const HISTORY_CAP_DAYS = 370;
+const HISTORY_TIMEOUT_MS = 60000;
+
+async function collectHistoryOnce(options) {
+  const clients = normalizeClientsCsv(options.clients);
+  if (!clients) return null;
+  const runGraph = options.runGraph || runTokscaleGraph;
+  const capDays = Number.isFinite(options.capDays) ? options.capDays : HISTORY_CAP_DAYS;
+  const todayKey = options.todayKey || localTodayKey();
+  try {
+    const graphJson = await runGraph({ clients, commandTimeoutMs: options.commandTimeoutMs || HISTORY_TIMEOUT_MS });
+    const history = normalizeHistory(parseGraphResult(graphJson), { capDays, todayKey });
+    return history.daily.length || history.monthly.length ? history : null;
+  } catch (error) {
+    if (typeof options.logger === 'function') options.logger(`tokscale graph failed: ${error.message}`);
+    return null;
+  }
+}
+
+function shouldIncludeHistory(nowMs, lastHistoryAtMs, historyIntervalMs, force) {
+  if (force) return true;
+  return nowMs - (lastHistoryAtMs || 0) >= historyIntervalMs;
+}
+
 async function collectUsageOnce(options) {
   const { clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion = appVersion(), agentRuntime = '' } = options;
   const normalizedClients = normalizeClientsCsv(clients);
@@ -313,6 +352,17 @@ async function collectUsageOnce(options) {
     month,
     allTime
   };
+  if (options.includeHistory) {
+    const history = await collectHistoryOnce({
+      clients: normalizedClients,
+      commandTimeoutMs: options.historyTimeoutMs,
+      capDays: options.historyCapDays,
+      todayKey: localTodayKey(),
+      runGraph: options.runGraph,
+      logger: options.logger
+    });
+    if (history) summary.history = history;
+  }
   if (options.limitsEnabled !== false) {
     summary.limits = options.limitsCollector
       ? await options.limitsCollector.snapshot(Boolean(options.forceLimits))
@@ -353,7 +403,7 @@ function watchPathsForClients(clientsCsv) {
 function startCollector(options) {
   const {
     clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion, agentRuntime,
-    intervalMs, watchEnabled, watchDebounceMs, limitsEnabled,
+    intervalMs, historyIntervalMs = 15 * 60 * 1000, watchEnabled, watchDebounceMs, limitsEnabled,
     onUpdate, onError, logger
   } = options;
   const log = logger || (() => {});
@@ -361,6 +411,8 @@ function startCollector(options) {
   let tickInFlight = false;
   let tickPending = false;
   let pendingForceLimits = false;
+  let pendingForceHistory = false;
+  let lastHistoryAt = 0;
   let pendingWaiters = [];
   let debounceTimer = null;
   let intervalTimer = null;
@@ -374,6 +426,8 @@ function startCollector(options) {
   }
 
   async function performTick(reason, tickOptions = {}) {
+    const includeHistory = shouldIncludeHistory(Date.now(), lastHistoryAt, historyIntervalMs, Boolean(tickOptions.forceHistory));
+    if (includeHistory) lastHistoryAt = Date.now();
     try {
       const summary = await collectUsageOnce({
         ...options,
@@ -384,6 +438,7 @@ function startCollector(options) {
         agentVersion,
         agentRuntime,
         limitsCollector,
+        includeHistory,
         forceLimits: Boolean(tickOptions.forceLimits)
       });
       if (stopped) return;
@@ -398,6 +453,7 @@ function startCollector(options) {
     if (tickInFlight) {
       tickPending = true;
       pendingForceLimits = pendingForceLimits || Boolean(tickOptions.forceLimits);
+      pendingForceHistory = pendingForceHistory || Boolean(tickOptions.forceHistory);
       return new Promise((resolve) => pendingWaiters.push(resolve));
     }
     tickInFlight = true;
@@ -405,9 +461,11 @@ function startCollector(options) {
       await performTick(reason, tickOptions);
       while (tickPending && !stopped) {
         const forceLimits = pendingForceLimits;
+        const forceHistory = pendingForceHistory;
         tickPending = false;
         pendingForceLimits = false;
-        await performTick('coalesced', { forceLimits });
+        pendingForceHistory = false;
+        await performTick('coalesced', { forceLimits, forceHistory });
       }
     } finally {
       tickInFlight = false;
@@ -473,12 +531,15 @@ function startCollector(options) {
 
 module.exports = {
   applySessionTimestamps,
+  collectHistoryOnce,
   collectUsageOnce,
   decideResolver,
+  localTodayKey,
   sessionTimestampMap,
   locateBundledBinary,
   readDownloadedPointer,
   resolvePlatformBinary,
+  shouldIncludeHistory,
   startCollector,
   tokscaleCommand,
   watchPathsForClients

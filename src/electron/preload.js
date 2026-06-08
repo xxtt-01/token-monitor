@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld('tokenMonitor', {
   getSessionDetail: (args) => ipcRenderer.invoke('session:getDetail', args),
   getStreamStatus: () => ipcRenderer.invoke('stream:status'),
   getServiceStatus: (options) => ipcRenderer.invoke('serviceStatus:get', options),
+  openDashboard: () => ipcRenderer.invoke('dashboard:open'),
+  getDashboardHistory: () => ipcRenderer.invoke('dashboard:getHistory'),
+  dashboard: {
+    minimize: () => ipcRenderer.send('dashboard:minimize'),
+    close: () => ipcRenderer.send('dashboard:close')
+  },
   getHubInfo: () => ipcRenderer.invoke('hub:getInfo'),
   regenerateHubSecret: () => ipcRenderer.invoke('hub:regenerateSecret'),
   onHubPush: (callback) => {

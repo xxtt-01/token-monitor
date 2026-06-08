@@ -26,7 +26,7 @@ const opencodeCookie = String(process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '').t
 const once = Boolean(args.once);
 const dryRun = Boolean(args['dry-run'] || args.dryRun);
 
-const collectorOptions = { clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion: appVersion(), agentRuntime: 'headless-agent', limitsEnabled, limitProviders, limitsRefreshMs, opencodeCookie };
+const collectorOptions = { clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion: appVersion(), agentRuntime: 'headless-agent', historyIntervalMs: Number(process.env.TOKEN_MONITOR_HISTORY_INTERVAL_MS || 15 * 60 * 1000), limitsEnabled, limitProviders, limitsRefreshMs, opencodeCookie };
 
 async function postUsage(summary) {
   const response = await fetch(`${hubUrl}/api/ingest`, {
@@ -59,7 +59,7 @@ async function main() {
   console.log(`Token Monitor agent device=${deviceId} hub=${hubUrl} intervalMs=${intervalMs} watch=${watchEnabled} limits=${limitsEnabled ? `${limitProviders || 'none'}:${limitsRefreshMs}ms` : 'off'}`);
   if (!secret) console.warn('Warning: TOKEN_MONITOR_SECRET is not set. Posting without authorization header.');
   if (once) {
-    const summary = await collectUsageOnce(collectorOptions);
+    const summary = await collectUsageOnce({ ...collectorOptions, includeHistory: true });
     await deliver(summary);
     return;
   }

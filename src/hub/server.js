@@ -3,7 +3,8 @@
 const http = require('node:http');
 const path = require('node:path');
 const { URL } = require('node:url');
-const { aggregateDevices, mergeDeviceRecord } = require('../shared/usage');
+const { aggregateDevices, mergeDeviceRecord, aggregateHistory } = require('../shared/usage');
+const { historyPreview } = require('../shared/history');
 const { isAuthorized, readJsonBody, sendJson, sendText } = require('../shared/http');
 const { loadDotEnv, parseArgs, projectRoot, readJson, writeJsonAtomic } = require('../shared/config');
 
@@ -25,7 +26,9 @@ function createHub({
   }
 
   function getStats() {
-    return aggregateDevices(Object.values(store.devices), staleAfterMs);
+    const stats = aggregateDevices(Object.values(store.devices), staleAfterMs);
+    stats.historyPreview = historyPreview(aggregateHistory(Object.values(store.devices), staleAfterMs));
+    return stats;
   }
 
   const sseClients = new Set();
@@ -61,6 +64,7 @@ function createHub({
 
     if (req.method === 'GET' && url.pathname === '/api/stats') return sendJson(res, 200, getStats());
     if (req.method === 'GET' && url.pathname === '/api/devices') return sendJson(res, 200, { devices: Object.values(store.devices) });
+    if (req.method === 'GET' && url.pathname === '/api/history') return sendJson(res, 200, aggregateHistory(Object.values(store.devices), staleAfterMs));
 
     if (req.method === 'GET' && url.pathname === '/api/stats/stream') {
       res.writeHead(200, {

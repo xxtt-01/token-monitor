@@ -1,27 +1,7 @@
 ﻿'use strict';
 
 const clientLabels = { claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes', gemini: 'Gemini', cursor: 'Cursor', opencode: 'OpenCode', openclaw: 'OpenClaw', antigravity: 'Antigravity' };
-const clientColors = {
-  claude: '#cc7c5e',
-  codex: '#49a3b0',
-  hermes: '#d4af37',
-  gemini: '#4285f4',
-  antigravity: '#4285f4',
-  deepseek: '#4d6bfe',
-  cursor: '#000000',
-  opencode: '#000000',
-  openclaw: '#ff4d4d',
-  xai: '#000000',
-  meta: '#1d65c1',
-  mistral: '#fa520f',
-  qwen: '#615ced',
-  moonshot: '#16191e',
-  zai: '#000000',
-  cohere: '#39594d',
-  xiaomi: '#ff6700',
-  minimax: '#f23f5d',
-  default: '#6ab4f0'
-};
+const { clientColors, fallbackModelColors, modelVendorFor, modelColor } = window.TokenMonitorUsageCharts;
 const clientsWithIcon = new Set([
   'claude', 'codex', 'gemini', 'cursor', 'opencode', 'openclaw', 'hermes', 'antigravity',
   'xai', 'deepseek', 'meta', 'mistral', 'qwen', 'moonshot', 'zai', 'cohere', 'xiaomi', 'minimax'
@@ -120,7 +100,6 @@ const LIMIT_CAPABILITY_TAG_KEYS = {
 };
 const deviceAccent = '#73bdf5';
 const deviceStaleColor = '#8c97a7';
-const fallbackModelColors = ['#6ab4f0', '#cc7c5e', '#a57df0', '#49a3b0', '#f0d66a', '#f06a7b'];
 const baseBreakdownOrder = ['tool', 'device', 'model', 'session'];
 const VIEW_DISPLAY_OPTIONS = [
   { id: 'tool', labelKey: 'views.tool' },
@@ -128,10 +107,11 @@ const VIEW_DISPLAY_OPTIONS = [
   { id: 'device', labelKey: 'views.device' },
   { id: 'model', labelKey: 'views.model' },
   { id: 'session', labelKey: 'views.session' },
-  { id: 'limits', labelKey: 'views.limits' }
+  { id: 'limits', labelKey: 'views.limits' },
+  { id: 'trends', labelKey: 'views.trends' }
 ];
 const viewPeriodValues = new Set(['today', 'month', 'allTime']);
-const viewBreakdownValues = new Set([...baseBreakdownOrder, 'status', 'limits']);
+const viewBreakdownValues = new Set([...baseBreakdownOrder, 'status', 'limits', 'trends']);
 const SERVICE_STATUS_PLACEHOLDERS = [
   { id: 'claude', label: 'Claude', pageUrl: 'https://status.claude.com' },
   { id: 'openai', label: 'OpenAI', pageUrl: 'https://status.openai.com' },
@@ -155,7 +135,7 @@ state.settingsSections = Object.fromEntries(SETTINGS_SECTION_IDS.map((id) => [id
 const defaultAppearance = { glassOpacity: 68, glassBlur: 32, zoomFactor: 1, systemGlass: true, showLiveDot: true, showToolIcons: true, titleIconOnly: false };
 let preferenceDrag = null;
 const els = {
-  shell: document.querySelector('.shell'), status: document.getElementById('status'), liveDot: document.getElementById('liveDot'), totalTokens: document.getElementById('totalTokens'), cost: document.getElementById('cost'), breakdown: document.getElementById('breakdown'), serviceStatusPanel: document.getElementById('serviceStatusPanel'), limitsPanel: document.getElementById('limitsPanel'), breakdownToggle: document.getElementById('breakdownToggle'), pinButton: document.getElementById('pinButton'), settingsButton: document.getElementById('settingsButton'), settingsPanel: document.getElementById('settingsPanel'), languageInput: document.getElementById('languageInput'), currencyInput: document.getElementById('currencyInput'), hubUrlInput: document.getElementById('hubUrlInput'), secretInput: document.getElementById('secretInput'), deviceIdInput: document.getElementById('deviceIdInput'), limitProviderCheckboxes: document.getElementById('limitProviderCheckboxes'), limitsRefreshInput: document.getElementById('limitsRefreshInput'), showLimitSourceInput: document.getElementById('showLimitSourceInput'), systemGlassInput: document.getElementById('systemGlassInput'), liveDotInput: document.getElementById('liveDotInput'), toolIconsInput: document.getElementById('toolIconsInput'), floatingBubbleInput: document.getElementById('floatingBubbleInput'), floatingBubbleTriggerInput: document.getElementById('floatingBubbleTriggerInput'), floatingBubbleTriggerRow: document.getElementById('floatingBubbleTriggerRow'), floatingBubbleContentInput: document.getElementById('floatingBubbleContentInput'), floatingBubbleContentRow: document.getElementById('floatingBubbleContentRow'), floatingBubbleContent: document.getElementById('floatingBubbleContent'), discordRpcInput: document.getElementById('discordRpcInput'), windowBehaviorInput: document.getElementById('windowBehaviorInput'), trayModeInput: document.getElementById('trayModeInput'), trayContentInput: document.getElementById('trayContentInput'), windowToggleShortcutValue: document.getElementById('windowToggleShortcutValue'), windowToggleShortcutRecordButton: document.getElementById('windowToggleShortcutRecordButton'), windowToggleShortcutClearButton: document.getElementById('windowToggleShortcutClearButton'), windowToggleShortcutNote: document.getElementById('windowToggleShortcutNote'), glassInput: document.getElementById('glassInput'), blurInput: document.getElementById('blurInput'), zoomInput: document.getElementById('zoomInput'), resetGlassButton: document.getElementById('resetGlassButton'), resetDepthButton: document.getElementById('resetDepthButton'), resetZoomButton: document.getElementById('resetZoomButton'), saveSettingsButton: document.getElementById('saveSettingsButton'), clientDisplayList: document.getElementById('clientDisplayList'), openConfigButton: document.getElementById('openConfigButton'), refreshButton: document.getElementById('refreshButton'), minButton: document.getElementById('minButton'), closeButton: document.getElementById('closeButton'), floatingBubbleTab: document.getElementById('floatingBubbleTab')
+  shell: document.querySelector('.shell'), status: document.getElementById('status'), liveDot: document.getElementById('liveDot'), totalTokens: document.getElementById('totalTokens'), cost: document.getElementById('cost'), breakdown: document.getElementById('breakdown'), serviceStatusPanel: document.getElementById('serviceStatusPanel'), limitsPanel: document.getElementById('limitsPanel'), trendsPanel: document.getElementById('trendsPanel'), breakdownToggle: document.getElementById('breakdownToggle'), pinButton: document.getElementById('pinButton'), settingsButton: document.getElementById('settingsButton'), settingsPanel: document.getElementById('settingsPanel'), languageInput: document.getElementById('languageInput'), currencyInput: document.getElementById('currencyInput'), hubUrlInput: document.getElementById('hubUrlInput'), secretInput: document.getElementById('secretInput'), deviceIdInput: document.getElementById('deviceIdInput'), limitProviderCheckboxes: document.getElementById('limitProviderCheckboxes'), limitsRefreshInput: document.getElementById('limitsRefreshInput'), showLimitSourceInput: document.getElementById('showLimitSourceInput'), systemGlassInput: document.getElementById('systemGlassInput'), liveDotInput: document.getElementById('liveDotInput'), toolIconsInput: document.getElementById('toolIconsInput'), floatingBubbleInput: document.getElementById('floatingBubbleInput'), floatingBubbleTriggerInput: document.getElementById('floatingBubbleTriggerInput'), floatingBubbleTriggerRow: document.getElementById('floatingBubbleTriggerRow'), floatingBubbleContentInput: document.getElementById('floatingBubbleContentInput'), floatingBubbleContentRow: document.getElementById('floatingBubbleContentRow'), floatingBubbleContent: document.getElementById('floatingBubbleContent'), discordRpcInput: document.getElementById('discordRpcInput'), windowBehaviorInput: document.getElementById('windowBehaviorInput'), trayModeInput: document.getElementById('trayModeInput'), trayContentInput: document.getElementById('trayContentInput'), windowToggleShortcutValue: document.getElementById('windowToggleShortcutValue'), windowToggleShortcutRecordButton: document.getElementById('windowToggleShortcutRecordButton'), windowToggleShortcutClearButton: document.getElementById('windowToggleShortcutClearButton'), windowToggleShortcutNote: document.getElementById('windowToggleShortcutNote'), glassInput: document.getElementById('glassInput'), blurInput: document.getElementById('blurInput'), zoomInput: document.getElementById('zoomInput'), resetGlassButton: document.getElementById('resetGlassButton'), resetDepthButton: document.getElementById('resetDepthButton'), resetZoomButton: document.getElementById('resetZoomButton'), saveSettingsButton: document.getElementById('saveSettingsButton'), clientDisplayList: document.getElementById('clientDisplayList'), openConfigButton: document.getElementById('openConfigButton'), refreshButton: document.getElementById('refreshButton'), minButton: document.getElementById('minButton'), closeButton: document.getElementById('closeButton'), floatingBubbleTab: document.getElementById('floatingBubbleTab')
 };
 Object.assign(els, {
   floatingBubbleOptions: document.getElementById('floatingBubbleOptions'),
@@ -338,6 +318,20 @@ function renderSettingsSummaries() {
 }
 
 function formatNumber(value) { return Math.round(Number(value || 0)).toLocaleString('en-US'); }
+function formatCompact(value) {
+  const num = Math.round(Number(value || 0));
+  const abs = Math.abs(num);
+  if (abs >= 1e9) return `${(num / 1e9).toFixed(1).replace(/\.0$/, '')}B`;
+  if (abs >= 1e6) return `${(num / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  if (abs >= 1e3) return `${(num / 1e3).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(num);
+}
+function trendShortLabel(label, labelKey) {
+  const value = String(label || '');
+  if (labelKey === 'month') return value.slice(0, 7);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return m ? `${Number(m[2])}/${Number(m[3])}` : value;
+}
 function currentCurrency() { return currencyApi.normalizeCurrency(state.settings?.currency); }
 function formatCost(value) { return currencyApi.formatCurrencyFromUsd(value, currentCurrency()); }
 function formatTime(value) { const date = value ? new Date(value) : new Date(); return Number.isNaN(date.getTime()) ? '--:--:--' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
@@ -661,35 +655,6 @@ function stableColor(value, colors) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function modelVendorFor(model) {
-  const name = String(model || '').toLowerCase();
-  if (/^(cursor-)?auto$/.test(name)) return 'cursor';
-  if (/claude|anthropic|sonnet|opus|haiku/.test(name)) return 'claude';
-  if (/gpt|openai|codex|^o[134](?:-|$)|o[134]-(mini|pro|preview)|chatgpt/.test(name)) return 'codex';
-  if (/gemini|gemma|google/.test(name)) return 'gemini';
-  if (/grok|xai/.test(name)) return 'xai';
-  if (/deepseek/.test(name)) return 'deepseek';
-  if (/llama|meta/.test(name)) return 'meta';
-  if (/mistral|mixtral|codestral/.test(name)) return 'mistral';
-  if (/qwen|qwq|qvq/.test(name)) return 'qwen';
-  if (/kimi|moonshot/.test(name)) return 'moonshot';
-  if (/chatglm|\bglm-|\bzai\b|z\.ai|zhipu/.test(name)) return 'zai';
-  if (/cohere|command-r/.test(name)) return 'cohere';
-  if (/mimo|xiaomi/.test(name)) return 'xiaomi';
-  if (/minimax|\babab/.test(name)) return 'minimax';
-  if (/^big-pickle$/.test(name)) return 'opencode'; // OpenCode Zen stealth model — no vendor hint in the name
-  return null;
-}
-
-function modelColor(model) {
-  const vendor = modelVendorFor(model);
-  if (vendor && clientColors[vendor]) return clientColors[vendor];
-  const name = String(model || '').toLowerCase();
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  return fallbackModelColors[Math.abs(hash) % fallbackModelColors.length];
-}
-
 function deviceRowsForPeriod() {
   const localId = state.settings?.deviceId || '';
   return (state.stats?.devices || []).map((device) => ({
@@ -753,7 +718,7 @@ function limitViewAvailable() {
 }
 
 function availableBreakdownIds() {
-  const order = [baseBreakdownOrder[0], 'status', ...baseBreakdownOrder.slice(1)];
+  const order = [baseBreakdownOrder[0], 'status', 'trends', ...baseBreakdownOrder.slice(1)];
   return limitViewAvailable() ? [...order, 'limits'] : order;
 }
 
@@ -1259,6 +1224,7 @@ function breakdownLabel(deviceText) {
   if (state.breakdown === 'model') return 'Model';
   if (state.breakdown === 'session') return 'Sessions';
   if (state.breakdown === 'limits') return 'Limits';
+  if (state.breakdown === 'trends') return 'Trends';
   return 'Tools';
 }
 
@@ -1384,6 +1350,44 @@ function turnNode(turn) {
 
 let contentReadySignaled = false;
 
+function renderTrends() {
+  const charts = window.TokenMonitorUsageCharts;
+  const preview = state.stats?.historyPreview || { daily: [], monthly: [], summary: {} };
+  const todayTotal = Number(state.stats?.periods?.today?.totalTokens || 0);
+  const { points, metric, labelKey } = charts.selectPreviewSeries(preview, state.period);
+  const finalPoints = state.period === 'today' ? charts.patchTodayBar(points, todayTotal) : points;
+
+  if (finalPoints.length === 0) {
+    els.trendsPanel.innerHTML = `<div class="trends-empty">${t('trends.empty')}</div>`;
+    return;
+  }
+
+  const model = charts.sparklinePreview(finalPoints, { width: 300, height: 120, gap: 0.3, metric });
+  const titles = finalPoints.map((p) => `${trendShortLabel(p[labelKey], labelKey)} · ${formatCompact(p[metric])}`);
+  const svg = charts.sparklineSvg(model, { titles });
+
+  const summary = preview.summary || {};
+  const rangeLabel = state.period === 'allTime' ? t('trends.range.year')
+    : state.period === 'month' ? t('trends.range.month') : t('trends.range.week');
+  const first = trendShortLabel(finalPoints[0][labelKey], labelKey);
+  const last = trendShortLabel(finalPoints[finalPoints.length - 1][labelKey], labelKey);
+  const stats = [
+    [t('trends.activeDays'), formatNumber(summary.activeDays)],
+    [t('trends.currentStreak'), formatNumber(summary.currentStreak)],
+    [t('trends.longestStreak'), formatNumber(summary.longestStreak)],
+    [t('trends.peakDay'), formatCompact(summary.peakDayTokens)]
+  ];
+  const statsHtml = stats
+    .map(([k, v]) => `<div class="trends-stat"><span class="trends-stat-v">${v}</span><span class="trends-stat-k">${k}</span></div>`)
+    .join('');
+
+  els.trendsPanel.innerHTML =
+    `<div class="trends-cap"><span>${rangeLabel}</span><span class="trends-open-hint" title="${t('trends.open')}">↗</span></div>`
+    + `<div class="trends-spark" role="button" tabindex="0" title="${t('trends.open')}">${svg}</div>`
+    + `<div class="trends-axis"><span>${first}</span><span>${last}</span></div>`
+    + `<div class="trends-stats">${statsHtml}</div>`;
+}
+
 function render() {
   if (!state.stats) return;
   ensureBreakdownVisible();
@@ -1410,11 +1414,19 @@ function render() {
   if (state.breakdown === 'limits') {
     els.breakdown.classList.add('hidden');
     els.serviceStatusPanel?.classList.add('hidden');
+    els.trendsPanel.classList.add('hidden');
     els.limitsPanel.classList.remove('hidden');
     renderLimits();
+  } else if (state.breakdown === 'trends') {
+    els.breakdown.classList.add('hidden');
+    els.limitsPanel.classList.add('hidden');
+    els.serviceStatusPanel?.classList.add('hidden');
+    els.trendsPanel.classList.remove('hidden');
+    renderTrends();
   } else if (state.breakdown === 'status') {
     els.breakdown.classList.add('hidden');
     els.limitsPanel.classList.add('hidden');
+    els.trendsPanel.classList.add('hidden');
     els.serviceStatusPanel?.classList.remove('hidden');
     renderServiceStatus();
   } else if (state.openSession) {
@@ -1422,10 +1434,12 @@ function render() {
     // limits hidden so a periodic re-render doesn't surface them over the detail.
     els.limitsPanel.classList.add('hidden');
     els.serviceStatusPanel?.classList.add('hidden');
+    els.trendsPanel.classList.add('hidden');
     els.breakdown.classList.add('hidden');
   } else {
     els.limitsPanel.classList.add('hidden');
     els.serviceStatusPanel?.classList.add('hidden');
+    els.trendsPanel.classList.add('hidden');
     els.breakdown.classList.remove('hidden');
     const rows = rowsForPeriod(period);
     renderRows(rows);
@@ -2850,6 +2864,15 @@ els.refreshButton.addEventListener('click', () => {
 });
 els.minButton.addEventListener('click', () => window.tokenMonitor.minimize());
 els.closeButton.addEventListener('click', () => window.tokenMonitor.close());
+els.trendsPanel.addEventListener('click', (event) => {
+  if (event.target.closest('.trends-spark, .trends-open-hint')) window.tokenMonitor.openDashboard();
+});
+els.trendsPanel.addEventListener('keydown', (event) => {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('.trends-spark')) {
+    event.preventDefault();
+    window.tokenMonitor.openDashboard();
+  }
+});
 els.floatingBubbleTab.addEventListener('pointerdown', handleFloatingBubblePointerDown);
 els.floatingBubbleTab.addEventListener('pointermove', handleFloatingBubblePointerMove);
 els.floatingBubbleTab.addEventListener('pointerup', handleFloatingBubblePointerUp);
