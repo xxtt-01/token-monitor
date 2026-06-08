@@ -1165,6 +1165,7 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 }
 .breakdown.hidden { display: none; }
 .breakdown::-webkit-scrollbar { width: 0; height: 0; }
+
 .row { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid rgba(197, 216, 236, 0.12); }
 .row-head { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
 .row-name { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; color: var(--text); }
@@ -1763,7 +1764,7 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 }
 .status-provider-interval select { font-size: 11px; }
 
-.trends-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; overflow: hidden; }
+.trends-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; overflow: hidden; }
 .trends-panel.hidden { display: none; }
 .trends-cap { flex: none; display: flex; align-items: center; justify-content: space-between; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6; }
 .trends-open-hint { opacity: 0.75; cursor: pointer; font-size: 13px; }
