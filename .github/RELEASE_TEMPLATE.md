@@ -4,8 +4,13 @@
 
 ## What's changed
 
-### Fixed
-- Fixed an issue where the cross-device Trends dashboard would show a blank screen and block clicks when in "Local only" mode.
+### Added
+- Added inline cache-hit breakdowns for tool and model rows, showing cache-hit input, cache-miss input, output tokens, and hit rates.
+
+### Improved
+- Improved the existing Usage Dashboard with Top Models and Top Tools progress breakdowns, chart scaling fixes, a redesigned range selector, updated heatmap styling, and cleaner legend layout.
+- Smoothed settings accordion animations in the settings panel.
+- Updated bundled tokscale to 3.1.0, including Codex fork replay deduplication and Claude tool-result usage accounting.
 
 ## Which file should I download?
 
@@ -39,8 +44,13 @@ open-source: https://github.com/junhoyeo/tokscale
 
 ## 更新内容
 
-### 修复
-- 修复了在「仅限本机」模式下，趋势仪表板会显示白屏并阻挡点击的问题。
+### 新增
+- 新增工具和模型行的内联缓存命中明细，可查看缓存命中输入、缓存未命中输入、输出 Token 与命中率。
+
+### 改进
+- 改进已有的使用仪表板，加入常用模型和常用工具进度统计，并优化图表缩放、时间范围切换、热力图样式和图例布局。
+- 优化设置面板里的折叠区块动画。
+- 将内置 tokscale 更新到 3.1.0，包含 Codex fork replay 去重，以及 Claude tool-result 用量统计修正。
 
 ## 应该下载哪个文件？
 
