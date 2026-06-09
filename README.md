@@ -76,9 +76,9 @@ Most usage monitors are useful on the machine they run on. Token Monitor is buil
 |:---:|:---:|:---:|
 | ![Limits View](.github/assets/limits-view.png) | ![Devices View](.github/assets/devices-view.png) | ![Models View](.github/assets/models-view.png) |
 
-| Session View | Session Details | Discord Rich Presence |
+| Session View | Session Details | Service Status |
 |:---:|:---:|:---:|
-| ![Session View](.github/assets/sessions-view.png) | ![Session Details](.github/assets/session-details.png) | ![Discord Rich Presence](.github/assets/discord-rpc.png) |
+| ![Session View](.github/assets/sessions-view.png) | ![Session Details](.github/assets/session-details.png) | ![Service Status](.github/assets/status-view.png) |
 
 | Usage Dashboard — Overview | Usage Dashboard — Trends |
 |:---:|:---:|
