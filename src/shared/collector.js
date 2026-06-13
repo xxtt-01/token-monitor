@@ -430,6 +430,9 @@ function clientWatchCandidates(clientsCsv) {
   add('openclaw', path.join(home, '.openclaw', 'agents'));
   add('cursor', path.join(home, '.config', 'tokscale', 'cursor-cache'));
   add('antigravity', path.join(home, '.config', 'tokscale', 'antigravity-cache'));
+  add('kimi', path.join(home, '.kimi', 'sessions'), path.join(process.env.KIMI_CODE_HOME || path.join(home, '.kimi-code'), 'sessions'));
+  add('qwen', path.join(home, '.qwen', 'projects'));
+  add('grok', path.join(process.env.GROK_HOME || path.join(home, '.grok'), 'sessions'));
   add(
     'cline',
     path.join(home, '.config', 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev', 'tasks'),

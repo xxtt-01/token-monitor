@@ -79,6 +79,38 @@ test('clientDataDirPresence still detects cursor/antigravity via their cache dir
   }
 });
 
+test('watchPathsForClients includes Kimi, Qwen, and Grok Build local roots', () => {
+  const tmp = withTmpHome([
+    path.join('.kimi', 'sessions'),
+    path.join('.kimi-code', 'sessions'),
+    path.join('.qwen', 'projects'),
+    path.join('.grok', 'sessions')
+  ]);
+  const originalHomedir = os.homedir;
+  const previousKimiCodeHome = process.env.KIMI_CODE_HOME;
+  const previousGrokHome = process.env.GROK_HOME;
+  os.homedir = () => tmp;
+  try {
+    delete process.env.KIMI_CODE_HOME;
+    delete process.env.GROK_HOME;
+    const { clientDataDirPresence, watchPathsForClients } = freshCollector();
+    const dirs = watchPathsForClients('kimi,qwen,grok');
+    assert.ok(dirs.includes(path.join(tmp, '.kimi', 'sessions')));
+    assert.ok(dirs.includes(path.join(tmp, '.kimi-code', 'sessions')));
+    assert.ok(dirs.includes(path.join(tmp, '.qwen', 'projects')));
+    assert.ok(dirs.includes(path.join(tmp, '.grok', 'sessions')));
+    assert.deepEqual(clientDataDirPresence('kimi,qwen,grok'), { kimi: true, qwen: true, grok: true });
+  } finally {
+    os.homedir = originalHomedir;
+    if (previousKimiCodeHome === undefined) delete process.env.KIMI_CODE_HOME;
+    else process.env.KIMI_CODE_HOME = previousKimiCodeHome;
+    if (previousGrokHome === undefined) delete process.env.GROK_HOME;
+    else process.env.GROK_HOME = previousGrokHome;
+    delete require.cache[collectorPath];
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('collectUsageOnce skips antigravity sync when no antigravity data root exists', async () => {
   const tmp = withTmpHome([]);
   const childProcess = require('node:child_process');

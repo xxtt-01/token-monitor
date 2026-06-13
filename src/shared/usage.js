@@ -116,6 +116,9 @@ function normalizeClientName(value) {
   if (raw.includes('gemini')) return 'gemini';
   if (raw.includes('cursor')) return 'cursor';
   if (raw.includes('antigravity')) return 'antigravity';
+  if (raw.includes('kimi')) return 'kimi';
+  if (raw.includes('qwen')) return 'qwen';
+  if (raw.includes('grok')) return 'grok';
   if (raw.includes('opencode')) return 'opencode';
   if (raw.includes('openclaw') || raw.includes('clawd') || raw.includes('moltbot') || raw.includes('moldbot')) return 'openclaw';
   return raw.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || null;

@@ -8,7 +8,9 @@
   const SPECIAL_ICON_SOURCES = {
     claude: '../../../assets/icons/tray-claude.svg',
     codex: '../../../assets/icons/tray-codex.svg',
-    hermes: '../../../assets/icons/hermes-agent.svg'
+    hermes: '../../../assets/icons/hermes-agent.svg',
+    kimi: '../../../assets/icons/moonshot.svg',
+    grok: '../../../assets/icons/xai.svg'
   };
 
   function trayProviderIconSources(clientIds) {

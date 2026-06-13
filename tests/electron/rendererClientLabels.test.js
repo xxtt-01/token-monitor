@@ -9,6 +9,10 @@ function rendererSource() {
   return fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'electron', 'renderer', 'app.js'), 'utf8');
 }
 
+function rendererStyles() {
+  return fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'electron', 'renderer', 'styles.css'), 'utf8');
+}
+
 function clientLabelIds(source) {
   const match = source.match(/const clientLabels = \{([^}]+)\};/);
   assert.ok(match, 'clientLabels declaration should exist');
@@ -29,6 +33,15 @@ test('renderer client labels cover every known client', () => {
   assert.deepEqual(missing, []);
 });
 
-test('renderer known clients include Cline', () => {
-  assert.ok(knownClientIds(rendererSource()).includes('cline'));
+test('renderer known clients include current tokscale-supported tools', () => {
+  const clients = knownClientIds(rendererSource());
+  for (const client of ['cline', 'kimi', 'qwen', 'grok']) {
+    assert.ok(clients.includes(client), `${client} should be a known renderer client`);
+  }
+});
+
+test('renderer distinguishes Grok model and Grok Build tool icons', () => {
+  const styles = rendererStyles();
+  assert.match(styles, /\.row-icon-xai\s*\{[^}]*assets\/icons\/grok\.svg/s);
+  assert.match(styles, /\.row-icon-grok\s*\{[^}]*assets\/icons\/xai\.svg/s);
 });

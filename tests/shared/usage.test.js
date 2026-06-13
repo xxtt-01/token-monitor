@@ -247,6 +247,19 @@ test('extractUsageFromTokscale normalizes Antigravity client names', () => {
   assert.equal(period.clientCosts.antigravity, 0.125);
 });
 
+test('extractUsageFromTokscale normalizes Kimi, Qwen, and Grok Build client names', () => {
+  const period = extractUsageFromTokscale([
+    { client: 'Kimi CLI', model: 'kimi-code/kimi-for-coding', totalTokens: 11 },
+    { client: 'Kimi Code', model: 'kimi-code/kimi-for-coding', totalTokens: 13 },
+    { client: 'Qwen CLI', model: 'qwen3.5-plus', totalTokens: 17 },
+    { client: 'Grok Build', model: 'grok-composer-2.5-fast', totalTokens: 19 }
+  ]);
+
+  assert.equal(period.clients.kimi, 24);
+  assert.equal(period.clients.qwen, 17);
+  assert.equal(period.clients.grok, 19);
+});
+
 test('extractUsageFromTokscale keeps model usage grouped by client', () => {
   const period = extractUsageFromTokscale([
     { client: 'Hermes', model: 'claude-3-5-sonnet', totalTokens: 100, costUsd: 1.25 },

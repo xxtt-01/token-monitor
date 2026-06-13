@@ -60,8 +60,8 @@
   // synthetic "default" fallback is shown last.
   const VENDOR_ORDER = [
     'claude', 'codex', 'hermes', 'opencode', 'openclaw', 'cline', 'cursor',
-    'gemini', 'antigravity', 'deepseek', 'xai', 'meta', 'mistral',
-    'qwen', 'moonshot', 'zai', 'cohere', 'xiaomi', 'minimax'
+    'gemini', 'antigravity', 'kimi', 'qwen', 'grok', 'deepseek', 'xai', 'meta', 'mistral',
+    'moonshot', 'zai', 'cohere', 'xiaomi', 'minimax'
   ];
 
   // Display labels for every vendor in the clientColors map. The widget also
@@ -77,6 +77,8 @@
     cursor: 'Cursor',
     gemini: 'Gemini',
     antigravity: 'Antigravity',
+    kimi: 'Kimi',
+    grok: 'Grok Build',
     deepseek: 'DeepSeek',
     xai: 'xAI',
     meta: 'Meta',

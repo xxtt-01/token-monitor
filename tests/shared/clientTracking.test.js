@@ -17,8 +17,11 @@ test('clientsCsvForSetting uses defaults only for missing settings', () => {
   assert.equal(clientsCsvForSetting(null), DEFAULT_CLIENTS);
 });
 
-test('default tracked clients include Cline', () => {
-  assert.ok(DEFAULT_CLIENTS.split(',').includes('cline'));
+test('default tracked clients include current tokscale-supported tools', () => {
+  const clients = DEFAULT_CLIENTS.split(',');
+  for (const client of ['cline', 'kimi', 'qwen', 'grok']) {
+    assert.ok(clients.includes(client), `${client} should be tracked by default`);
+  }
 });
 
 test('clientsCsvForSetting preserves explicit empty tracked-tool selection', () => {
