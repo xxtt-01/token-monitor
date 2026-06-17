@@ -1595,20 +1595,19 @@ function render() {
   }
   state.currentTotal = nextTotal;
   els.cost.textContent = formatCost(period.costUsd || 0);
-  // Cache hit rate — color from red→yellow→green, with glow at high rates
+  // Cache hit rate = cacheRead / (input + cacheRead) = cacheRead / (totalTokens - output)
   const cacheReadVal = period.cacheReadTokens || 0;
   const outputTokensVal = period.outputTokens || 0;
-  const inputTokensVal = nextTotal - outputTokensVal;
-  if (cacheReadVal > 0 && inputTokensVal > 0) {
-    const hitPct = Math.round((cacheReadVal / inputTokensVal) * 100);
+  const totalInputVal = nextTotal - outputTokensVal; // input + cacheRead
+  if (cacheReadVal > 0 && totalInputVal > 0) {
+    const hitPct = Math.round((cacheReadVal / totalInputVal) * 100);
     els.cacheRate.textContent = '⚡ Cache hit: ' + hitPct + '%';
     els.cacheRate.classList.remove('hidden');
-    // Green at 100%, yellow at 50%, red at 0%
     const r = Math.round(255 * (1 - hitPct / 100) * 2);
     const g = Math.round(255 * (hitPct / 100) * 1.5);
-    const color = hitPct >= 95 ? '#4ade80' : `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, 80)`;
+    const color = hitPct >= 90 ? '#4ade80' : `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, 80)`;
     els.cacheRate.style.color = color;
-    els.cacheRate.style.textShadow = hitPct >= 95 ? '0 0 8px rgba(74, 222, 128, 0.4)' : 'none';
+    els.cacheRate.style.textShadow = hitPct >= 90 ? '0 0 8px rgba(74, 222, 128, 0.4)' : 'none';
   } else {
     els.cacheRate.classList.add('hidden');
   }
