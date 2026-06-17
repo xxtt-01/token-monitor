@@ -138,7 +138,7 @@ function normalizeInitialViewValue(value, allowed, fallback) {
   return allowed.has(raw) ? raw : fallback;
 }
 
-const state = { period: normalizeInitialViewValue(initialViewState.period, viewPeriodValues, 'today'), appUpdate: null, breakdown: normalizeInitialViewValue(initialViewState.breakdown, viewBreakdownValues, 'tool'), settings: null, stats: null, serviceStatus: null, serviceStatusBusy: false, serviceProvidersExpanded: false, trendSettingsExpanded: false, serviceStatusTicker: null, refreshTimer: null, refreshBusy: false, refreshFeedbackTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, streamFailure: null, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false, hubInfo: null, cursorAccount: { status: null, error: '' }, cursorAccountExpanded: false, codexAccountExpanded: false, codexAccountError: '', customPricingExpanded: false, opencodeAccount: { status: null, error: '' }, opencodeCookieExpanded: false, deepseekAccountExpanded: false, deepseekPendingCheckSince: 0, floatingBubble: initialFloatingBubble, suppressInitialNumberAnimation: window.__TOKEN_MONITOR_SUPPRESS_INITIAL_NUMBER_ANIMATION__ === true, openSession: null, detailSort: 'time', recordingWindowShortcut: false, windowShortcutInvalid: false };
+const state = { period: normalizeInitialViewValue(initialViewState.period, viewPeriodValues, 'today'), appUpdate: null, breakdown: normalizeInitialViewValue(initialViewState.breakdown, viewBreakdownValues, 'tool'), settings: null, stats: null, serviceStatus: null, serviceStatusBusy: false, serviceProvidersExpanded: false, trendSettingsExpanded: false, serviceStatusTicker: null, refreshTimer: null, refreshBusy: false, refreshFeedbackTimer: null, currentTotal: 0, rowSignature: '', streamConnected: false, streamFailure: null, mode: 'idle', appInfo: null, tokscaleStatus: null, tokscaleCheck: null, tokscaleBusy: false, hubInfo: null, cursorAccount: { status: null, error: '' }, cursorAccountExpanded: false, codexAccountExpanded: false, codexAccountError: '', customPricingExpanded: false, opencodeProfileCount: 0, opencodeCookieExpanded: false, deepseekAccountExpanded: false, deepseekPendingCheckSince: 0, floatingBubble: initialFloatingBubble, suppressInitialNumberAnimation: window.__TOKEN_MONITOR_SUPPRESS_INITIAL_NUMBER_ANIMATION__ === true, openSession: null, detailSort: 'time', recordingWindowShortcut: false, windowShortcutInvalid: false };
 state.settingsSections = Object.fromEntries(SETTINGS_SECTION_IDS.map((id) => [id, false]));
 const defaultAppearance = { glassOpacity: 68, glassBlur: 32, zoomFactor: 1, systemGlass: true, showLiveDot: true, showToolIcons: true, titleIconOnly: false, settingsInTitlebar: false };
 let preferenceDrag = null;
@@ -307,11 +307,11 @@ function settingsSectionSummary(section) {
   }
   if (section === 'accounts') {
     const cursorLinked = Boolean(state.cursorAccount.status?.loggedIn) && !state.cursorAccount.status?.expired;
-    const opencodeLinked = Boolean(state.opencodeAccount.status?.linked) && !state.opencodeAccount.status?.expired;
+    const opencodeCount = state.opencodeProfileCount || 0;
     const deepseekLinked = deepseekAccountLinked();
     const codexLinked = (state.settings?.codexManagedAccounts || []).length > 0;
     return t('settings.summary.accounts', {
-      linked: (codexLinked ? 1 : 0) + (cursorLinked ? 1 : 0) + (opencodeLinked ? 1 : 0) + (deepseekLinked ? 1 : 0),
+      linked: (codexLinked ? 1 : 0) + (cursorLinked ? 1 : 0) + (opencodeCount > 0 ? 1 : 0) + (deepseekLinked ? 1 : 0),
       total: 4
     });
   }
@@ -2583,7 +2583,7 @@ function syncSettingsForm() {
   renderToolPreferences();
   renderLimitProviderCheckboxes();
   renderSettingsSummaries();
-  renderOpencodeStatus();
+  renderOpenCodeProfiles();
   applyVendorColorOverrides(state.settings.vendorColors);
   applyAppearanceSettings(state.settings);
   buildAppearanceColorControls();
@@ -4044,114 +4044,131 @@ function renderDeepseekStatus() {
   renderSettingsSummaries();
 }
 
-function renderOpencodeStatus() {
-  const statusEl = document.getElementById('opencodeCookieStatus');
-  const openBtn = document.getElementById('opencodeOpenBrowser');
-  const logoutBtn = document.getElementById('opencodeLogoutButton');
-  const refreshBtn = document.getElementById('opencodeRefreshButton');
-  const manualPanel = document.getElementById('opencodeManualPanel');
-  const errorEl = document.getElementById('opencodeErrorMessage');
-  if (!statusEl || !openBtn || !logoutBtn || !refreshBtn || !manualPanel || !errorEl) return;
+function renderOpenCodeProfiles() {
+  const listEl = document.getElementById('opencodeProfileList');
+  if (!listEl) return;
 
-  errorEl.classList.add('hidden');
-  errorEl.textContent = '';
+  const api = window.tokenMonitor.opencode;
 
-  if (state.opencodeAccount.error) {
-    setCursorStatusText(statusEl, t('settings.common.error'));
-    errorEl.textContent = state.opencodeAccount.errorMessage || t('settings.opencode.statusCheckFailed', { message: state.opencodeAccount.error });
-    errorEl.classList.remove('hidden');
-    openBtn.classList.remove('hidden');
-    logoutBtn.classList.remove('hidden');
-    refreshBtn.classList.remove('hidden');
-    manualPanel.classList.remove('hidden');
-    setSettingsSectionExpanded('accounts', true);
-    setOpencodeCookieExpanded(true);
-    renderSettingsSummaries();
-    return;
+  api.getProfiles().then(({ profiles, hasEnvVar }) => {
+    listEl.innerHTML = '';
+    const entries = Object.entries(profiles);
+
+    if (entries.length === 0 && !hasEnvVar) {
+      const msg = document.createElement('p');
+      msg.className = 'settings-note';
+      msg.textContent = 'No profiles configured. Add one below.';
+      listEl.appendChild(msg);
+      state.opencodeProfileCount = 0;
+      return;
+    }
+
+    state.opencodeProfileCount = entries.length;
+
+    for (const [name, profile] of entries) {
+      const item = document.createElement('div');
+      item.className = 'opencode-profile-item';
+
+      // Toggle checkbox
+      const toggle = document.createElement('input');
+      toggle.type = 'checkbox';
+      toggle.className = 'profile-toggle';
+      toggle.checked = profile.enabled;
+      toggle.addEventListener('change', () => {
+        api.setProfileEnabled(name, toggle.checked);
+      });
+
+      // Name (click to rename)
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'profile-name';
+      nameSpan.textContent = name;
+      nameSpan.title = 'Click to rename';
+      nameSpan.addEventListener('click', () => {
+        const newName = prompt('Rename "' + name + '" to:', name);
+        if (newName && newName.trim() && newName.trim() !== name) {
+          api.renameProfile(name, newName.trim()).then(() => {
+            renderOpenCodeProfiles();
+            updateOpenCodeProfilesStatus();
+          });
+        }
+      });
+
+      // Status
+      const statusSpan = document.createElement('span');
+      statusSpan.className = 'profile-status';
+      statusSpan.id = 'opencode-status-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      statusSpan.textContent = profile.enabled ? '...' : '(disabled)';
+
+      // Balance
+      const balanceSpan = document.createElement('span');
+      balanceSpan.className = 'profile-balance';
+      balanceSpan.id = 'opencode-balance-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      // Delete button
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'profile-delete';
+      deleteBtn.textContent = '✕';
+      deleteBtn.title = 'Delete profile';
+      deleteBtn.addEventListener('click', async () => {
+        if (confirm('Delete profile "' + name + '"?')) {
+          await api.deleteProfile(name);
+          renderOpenCodeProfiles();
+          updateOpenCodeProfilesStatus();
+        }
+      });
+
+      item.append(toggle, nameSpan, statusSpan, balanceSpan, deleteBtn);
+      listEl.appendChild(item);
+    }
+
+    updateOpenCodeProfilesStatus();
+  });
+}
+
+async function updateOpenCodeProfilesStatus() {
+  const api = window.tokenMonitor.opencode;
+  const status = await api.status();
+  const profiles = status.profiles || {};
+
+  for (const [name, s] of Object.entries(profiles)) {
+    const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const statusEl = document.getElementById('opencode-status-' + safeName);
+    const balanceEl = document.getElementById('opencode-balance-' + safeName);
+    if (!statusEl) continue;
+
+    if (s.expired) {
+      statusEl.textContent = 'Expired';
+    } else if (s.linked) {
+      const parts = [];
+      if (s.go) parts.push('Go');
+      if (s.zen) parts.push('Zen');
+      statusEl.textContent = '✓ ' + parts.join(' · ');
+      if (balanceEl && s.hasBalance && s.balanceUsd != null) {
+        balanceEl.textContent = '$' + Number(s.balanceUsd).toFixed(2);
+      }
+    } else if (s.error) {
+      statusEl.textContent = s.error;
+    } else {
+      statusEl.textContent = 'Disconnected';
+    }
   }
 
-  const status = state.opencodeAccount.status;
-  if (!status) {
-    setCursorStatusText(statusEl, t('settings.common.checking'));
-    renderSettingsSummaries();
-    return;
+  // Update summary pill
+  const totalEl = document.getElementById('opencodeCookieStatus');
+  if (totalEl) {
+    const linkedCount = Object.values(profiles).filter(s => s.linked).length;
+    const totalCount = Object.keys(profiles).length;
+    if (totalCount > 0) {
+      totalEl.textContent = linkedCount + '/' + totalCount + ' connected';
+    } else {
+      totalEl.textContent = 'Not configured';
+    }
   }
-
-  if (status.saveFailed) {
-    setCursorStatusText(statusEl, t('settings.common.error'));
-    errorEl.textContent = status.error || t('settings.common.error');
-    errorEl.classList.remove('hidden');
-    openBtn.classList.remove('hidden');
-    logoutBtn.classList.add('hidden');
-    refreshBtn.classList.add('hidden');
-    manualPanel.classList.remove('hidden');
-    setOpencodeCookieExpanded(true);
-    return;
-  }
-
-  if (!status.linked) {
-    setCursorStatusText(statusEl, t('settings.opencode.statusNotSet'));
-    openBtn.classList.remove('hidden');
-    logoutBtn.classList.add('hidden');
-    refreshBtn.classList.add('hidden');
-    manualPanel.classList.remove('hidden');
-    renderSettingsSummaries();
-    return;
-  }
-
-  if (status.expired) {
-    setCursorStatusText(statusEl, t('settings.opencode.expired'));
-    errorEl.textContent = status.error || t('settings.opencode.expired');
-    errorEl.classList.remove('hidden');
-    openBtn.classList.remove('hidden');
-    logoutBtn.classList.remove('hidden');
-    refreshBtn.classList.remove('hidden');
-    manualPanel.classList.remove('hidden');
-    setSettingsSectionExpanded('accounts', true);
-    setOpencodeCookieExpanded(true);
-    renderSettingsSummaries();
-    return;
-  }
-
-  if (status.error) {
-    setCursorStatusText(statusEl, t('settings.common.error'));
-    errorEl.textContent = t('settings.opencode.statusCheckFailed', { message: status.error });
-    errorEl.classList.remove('hidden');
-    openBtn.classList.add('hidden');
-    logoutBtn.classList.remove('hidden');
-    refreshBtn.classList.remove('hidden');
-    manualPanel.classList.add('hidden');
-    renderSettingsSummaries();
-    return;
-  }
-
-  // Linked: append a read-only indicator of what the cookie actually unlocked
-  // (Go real usage / Zen balance). Empty when the account has neither yet.
-  const tags = [];
-  if (status.go) tags.push('Go ✓');
-  if (status.hasBalance) tags.push(`${t('settings.opencode.tagZenBalance')} ✓`);
-  else if (status.zen) tags.push('Zen ✓');
-  const linkedText = tags.length
-    ? `${t('settings.opencode.statusLinked')} · ${tags.join(' · ')}`
-    : t('settings.opencode.statusLinked');
-  setCursorStatusText(statusEl, linkedText);
-  openBtn.classList.add('hidden');
-  logoutBtn.classList.remove('hidden');
-  refreshBtn.classList.remove('hidden');
-  manualPanel.classList.add('hidden');
-  renderSettingsSummaries();
 }
 
 async function refreshOpencodeStatus() {
-  state.opencodeAccount = { status: null, error: '' };
-  renderOpencodeStatus();
-  try {
-    const status = await window.tokenMonitor.opencode.status();
-    state.opencodeAccount = { status, error: '' };
-  } catch (err) {
-    state.opencodeAccount = { status: null, error: err.message };
-  }
-  renderOpencodeStatus();
+  renderOpenCodeProfiles();
+  updateOpenCodeProfilesStatus();
 }
 
 function renderCursorStatus() {
@@ -4533,53 +4550,54 @@ function setupCursorAccountUI() {
 
   const opencodeToggle = document.getElementById('opencodeSettingsToggle');
   if (opencodeToggle) {
-    opencodeToggle.addEventListener('click', () => setOpencodeCookieExpanded(!state.opencodeCookieExpanded));
-    setOpencodeCookieExpanded(false);
-    renderOpencodeStatus();
+    opencodeToggle.addEventListener('click', () => {
+      const details = document.getElementById('opencodeSettingsDetails');
+      const expanded = details.classList.contains('hidden');
+      details.classList.toggle('hidden', !expanded);
+      opencodeToggle.setAttribute('aria-expanded', String(expanded));
+      if (expanded) {
+        renderOpenCodeProfiles();
+      }
+    });
 
     document.getElementById('opencodeOpenBrowser').addEventListener('click', () => {
       window.tokenMonitor.openExternal('https://opencode.ai/auth');
     });
 
     document.getElementById('opencodeLogoutButton').addEventListener('click', async () => {
-      await window.tokenMonitor.opencode.logout();
-      if (state.settings) state.settings.opencodeCookie = '';
-      await refreshOpencodeStatus();
-      await refreshStats({ force: true });
+      if (confirm('Logout from all OpenCode accounts?')) {
+        await window.tokenMonitor.opencode.logout();
+        renderOpenCodeProfiles();
+        updateOpenCodeProfilesStatus();
+        document.getElementById('opencodeCookieStatus').textContent = 'Not configured';
+      }
     });
 
     document.getElementById('opencodeRefreshButton').addEventListener('click', () => {
-      refreshOpencodeStatus();
+      renderOpenCodeProfiles();
+      updateOpenCodeProfilesStatus();
     });
 
     document.getElementById('opencodeCookieSubmit').addEventListener('click', async () => {
       const input = document.getElementById('opencodeCookieInput');
+      const nameInput = document.getElementById('opencodeProfileName');
       const errorEl = document.getElementById('opencodeErrorMessage');
+      const name = (nameInput.value || '').trim() || 'default';
+      const cookie = input.value;
+
       errorEl.classList.add('hidden');
-      state.opencodeAccount = { status: null, error: '' };
-      renderOpencodeStatus();
-      const result = await window.tokenMonitor.opencode.saveCookie(input.value);
-      if (result?.ok) {
+
+      const result = await window.tokenMonitor.opencode.saveProfile(name, cookie);
+      if (result.ok) {
         input.value = '';
-        if (state.settings) state.settings.opencodeCookie = result.cleared ? '' : 'set';
-        await refreshOpencodeStatus();
-        if (!result.cleared) setOpencodeCookieExpanded(false);
-        await refreshStats({ force: true });
+        nameInput.value = '';
+        renderOpenCodeProfiles();
+        updateOpenCodeProfilesStatus();
       } else {
-        const message = result?.error || t('settings.common.error');
-        state.opencodeAccount = {
-          status: {
-            linked: false,
-            saveFailed: true,
-            error: t('settings.opencode.saveFailed', { message })
-          },
-          error: ''
-        };
-        renderOpencodeStatus();
+        errorEl.textContent = result.error || 'Failed to save profile';
+        errorEl.classList.remove('hidden');
       }
     });
-
-    refreshOpencodeStatus();
   }
 
   const deepseekToggle = document.getElementById('deepseekSettingsToggle');

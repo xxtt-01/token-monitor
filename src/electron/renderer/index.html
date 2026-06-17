@@ -375,17 +375,18 @@
             </div>
             <div id="opencodeCookieGroup" class="settings-group cursor-account-group">
               <button id="opencodeSettingsToggle" class="settings-group-header cursor-settings-toggle" type="button" aria-expanded="false" aria-controls="opencodeSettingsDetails">
-                <span data-i18n="settings.opencode.title">OpenCode Account</span>
+                <span data-i18n="settings.opencode.title">OpenCode Accounts</span>
                 <span class="cursor-settings-summary">
                   <span id="opencodeCookieStatus" class="cursor-status-pill" data-i18n="settings.opencode.statusNotSet">Not configured</span>
                   <span class="cursor-disclosure-icon" aria-hidden="true"></span>
                 </span>
               </button>
               <div id="opencodeSettingsDetails" class="cursor-settings-details hidden">
+                <div id="opencodeProfileList" class="opencode-profile-list"></div>
                 <div class="settings-actions">
                   <button id="opencodeOpenBrowser" data-i18n="settings.opencode.openBrowser">Open OpenCode auth in browser</button>
                   <button id="opencodeLogoutButton" class="hidden" data-i18n="settings.common.logout">Logout</button>
-                  <button id="opencodeRefreshButton" class="hidden" data-i18n="settings.common.refresh">Refresh</button>
+                  <button id="opencodeRefreshButton" data-i18n="settings.common.refresh">Refresh</button>
                 </div>
                 <div id="opencodeManualPanel">
                   <p class="settings-note">
@@ -394,9 +395,13 @@
                     <strong>3.</strong> <span data-i18n="settings.opencode.step3Before">Copy the</span> <code>auth</code> <span data-i18n="settings.opencode.step3After">value.</span><br>
                     <strong>4.</strong> <span data-i18n="settings.opencode.step4">Paste it below and click Save.</span>
                   </p>
+                  <div class="settings-row">
+                    <label for="opencodeProfileName"><span data-i18n="settings.opencode.profileName">Profile name:</span></label>
+                    <input id="opencodeProfileName" type="text" placeholder="work" data-i18n-placeholder="settings.opencode.profileNamePlaceholder">
+                  </div>
                   <textarea id="opencodeCookieInput" rows="3" spellcheck="false" placeholder="auth=..." data-i18n-placeholder="settings.opencode.cookiePlaceholder"></textarea>
                   <div class="settings-actions">
-                    <button id="opencodeCookieSubmit" data-i18n="settings.opencode.saveCookie">Save cookie</button>
+                    <button id="opencodeCookieSubmit" data-i18n="settings.opencode.saveCookie">Save profile</button>
                   </div>
                 </div>
                 <div id="opencodeErrorMessage" class="settings-note error hidden"></div>

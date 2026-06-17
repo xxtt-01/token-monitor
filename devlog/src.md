@@ -27,3 +27,17 @@
   - 新增 5 个 IPC handler: getProfiles/saveProfile/deleteProfile/renameProfile/setProfileEnabled
   - preload.js 桥接所有新 IPC 方法到 renderer 进程
 - **影响范围:** Electron 主进程 IPC 层、渲染进程 API 桥接
+
+## 2026-06-17 19:00: 多账号 UI — OpenCode 设置面板
+- **文件:**
+  - `src/electron/renderer/index.html`
+  - `src/electron/renderer/styles.css`
+  - `src/electron/renderer/app.js`
+- **原因:** 为多账号功能提供 UI 界面支持
+- **决策:**
+  - index.html: 旧面板替换为多账号面板，新增 profile list 容器、profile name 输入框
+  - styles.css: 新增 `.opencode-profile-*` 样式类（list/item/name/status/balance/delete）
+  - app.js: 新增 `renderOpenCodeProfiles()` 和 `updateOpenCodeProfilesStatus()` 动态渲染 profile 列表
+  - app.js: 移除了 `state.opencodeAccount` 状态追踪，改用 `state.opencodeProfileCount`
+  - app.js: 事件绑定改为使用 `saveProfile`/`deleteProfile`/`renameProfile`/`setProfileEnabled` IPC API
+- **影响范围:** 设置面板 OpenCode 多账号管理 UI

@@ -2202,3 +2202,49 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 }
 
 .custom-pricing-edit { cursor: pointer; }
+
+.opencode-profile-list {
+  margin-bottom: 12px;
+}
+.opencode-profile-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface-color, rgba(255,255,255,0.05));
+  margin-bottom: 4px;
+}
+.opencode-profile-item .profile-name {
+  flex: 1;
+  font-size: 13px;
+  cursor: pointer;
+}
+.opencode-profile-item .profile-name:hover {
+  text-decoration: underline;
+}
+.opencode-profile-item .profile-status {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+}
+.opencode-profile-item .profile-balance {
+  font-size: 11px;
+  color: var(--accent-color, #73bdf5);
+  margin-left: auto;
+}
+.opencode-profile-item .profile-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--danger-color, #e74c3c);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.opencode-profile-item .profile-delete:hover {
+  background: rgba(231, 76, 60, 0.15);
+}
+.opencode-profile-item.env-profile {
+  opacity: 0.7;
+}
