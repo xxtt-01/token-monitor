@@ -2212,10 +2212,14 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   font-size: 13px;
   text-align: center;
 }
-.opencode-profile-header {
+.opencode-profile-header,
+.opencode-profile-item {
   display: grid;
-  grid-template-columns: 24px 1fr 100px 80px 28px;
-  gap: 6px;
+  grid-template-columns: 24px minmax(0, 1fr) auto 20px;
+  gap: 4px;
+  align-items: center;
+}
+.opencode-profile-header {
   padding: 2px 8px 4px;
   font-size: 11px;
   color: var(--text-secondary, #888);
@@ -2224,11 +2228,9 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   border-bottom: 1px solid rgba(255,255,255,0.08);
   margin-bottom: 4px;
 }
-.opencode-profile-item {
-  display: grid;
-  grid-template-columns: 24px 1fr 100px 80px 28px;
-  gap: 6px;
-  align-items: center;
+.opencode-profile-header .ph-info {
+  text-align: right;
+}
   padding: 6px 8px;
   border-radius: 6px;
   transition: background 0.15s;
@@ -2265,7 +2267,7 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   border-radius: 3px;
   background: rgba(0,0,0,0.2);
   color: inherit;
-  width: 100%;
+  min-width: 60px;
   outline: none;
 }
 .opencode-profile-item .profile-rename-btn {
@@ -2287,16 +2289,10 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   color: var(--accent-color, #73bdf5);
   background: rgba(115, 189, 245, 0.1);
 }
-.opencode-profile-item .profile-status {
+.opencode-profile-item .profile-info {
   font-size: 12px;
   color: var(--text-secondary, #888);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.opencode-profile-item .profile-balance {
-  font-size: 12px;
-  color: var(--accent-color, #73bdf5);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -2323,25 +2319,121 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   opacity: 0.6;
 }
 
-/* 添加账号折叠面板 */
+/* 添加账号 — 高级感折叠面板 */
 .opencode-add-form {
-  margin-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  padding-top: 8px;
+  margin-top: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.opencode-add-form[open] {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 .opencode-add-summary {
   cursor: pointer;
   font-size: 13px;
   color: var(--accent-color, #73bdf5);
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
   user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  transition: background 0.2s;
+}
+.opencode-add-summary::-webkit-details-marker {
+  display: none;
 }
 .opencode-add-summary:hover {
-  background: rgba(115, 189, 245, 0.1);
+  background: rgba(115, 189, 245, 0.08);
+}
+.opencode-add-summary .add-icon {
+  transition: transform 0.25s ease;
+  opacity: 0.8;
+}
+.opencode-add-form[open] .add-icon {
+  transform: rotate(45deg);
 }
 .opencode-add-body {
-  padding: 8px;
+  padding: 0 10px 10px;
+}
+.add-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #aaa);
+}
+.add-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(115, 189, 245, 0.15);
+  color: var(--accent-color, #73bdf5);
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.add-step code {
+  background: rgba(255,255,255,0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.add-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.add-fields .settings-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.add-fields .settings-row label {
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  white-space: nowrap;
+}
+.add-fields .settings-row input {
+  flex: 1;
+}
+.add-fields textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.add-save-btn {
+  align-self: flex-end;
+  padding: 6px 20px;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #73bdf5, #4a9de0);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.add-save-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.add-save-btn:active {
+  transform: translateY(0);
 }
 
 /* 缓存命中率 */

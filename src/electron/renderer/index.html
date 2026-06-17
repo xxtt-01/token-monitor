@@ -387,21 +387,26 @@
 
                 <!-- Add new account -->
                 <details id="opencodeAddForm" class="opencode-add-form">
-                  <summary class="opencode-add-summary">+ 添加账号</summary>
+                  <summary class="opencode-add-summary">
+                    <svg class="add-icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    添加账号
+                  </summary>
                   <div class="opencode-add-body">
-                    <p class="settings-note">
-                      <strong>1.</strong> 浏览器打开 <code>opencode.ai/auth</code> 并登录<br>
-                      <strong>2.</strong> DevTools (F12) → Application → Cookies → <code>opencode.ai</code><br>
-                      <strong>3.</strong> 复制 <code>auth</code> 的值<br>
-                      <strong>4.</strong> 填入下方名称和 cookie，点保存
-                    </p>
-                    <div class="settings-row">
-                      <label for="opencodeProfileName">账号名称</label>
-                      <input id="opencodeProfileName" type="text" placeholder="例如: work、personal">
+                    <div class="add-steps">
+                      <div class="add-step"><span class="step-num">1</span> 浏览器打开 <code>opencode.ai/auth</code> 并登录</div>
+                      <div class="add-step"><span class="step-num">2</span> DevTools (F12) → Application → Cookies → <code>opencode.ai</code></div>
+                      <div class="add-step"><span class="step-num">3</span> 复制 <code>auth</code> 的值</div>
+                      <div class="add-step"><span class="step-num">4</span> 填入下方名称和 cookie，点保存</div>
                     </div>
-                    <textarea id="opencodeCookieInput" rows="3" spellcheck="false" placeholder="auth=..."></textarea>
-                    <div class="settings-actions">
-                      <button id="opencodeCookieSubmit" data-i18n="settings.opencode.saveCookie">保存</button>
+                    <div class="add-fields">
+                      <div class="settings-row">
+                        <label for="opencodeProfileName">账号名称</label>
+                        <input id="opencodeProfileName" type="text" placeholder="例如: work、personal">
+                      </div>
+                      <textarea id="opencodeCookieInput" rows="3" spellcheck="false" placeholder="auth=..."></textarea>
+                      <button id="opencodeCookieSubmit" class="add-save-btn">保存</button>
                     </div>
                   </div>
                 </details>

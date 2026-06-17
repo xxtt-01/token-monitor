@@ -4082,7 +4082,7 @@ function renderOpenCodeProfiles() {
     // 表头
     const header = document.createElement('div');
     header.className = 'opencode-profile-header';
-    header.innerHTML = '<span></span><span>名称</span><span>状态</span><span>余额</span><span></span>';
+    header.innerHTML = '<span></span><span>名称</span><span class="ph-info">状态 · 余额</span><span></span>';
     listEl.appendChild(header);
 
     for (const [name, profile] of entries) {
@@ -4097,33 +4097,27 @@ function renderOpenCodeProfiles() {
       toggle.checked = profile.enabled;
       toggle.addEventListener('change', () => {
         api.setProfileEnabled(name, toggle.checked).then(() => {
-          const st = item.querySelector('.profile-status');
-          st.textContent = toggle.checked ? '...' : '已禁用';
-          const bal = item.querySelector('.profile-balance');
-          if (bal) bal.textContent = '';
+          const info = item.querySelector('.profile-info');
+          info.textContent = toggle.checked ? '...' : '已禁用';
           renderSettingsSummaries();
         });
       });
 
-      // Name container (clickable, turns into input on click)
+      // Name container
       const nameBox = document.createElement('span');
       nameBox.className = 'profile-name-box';
-
       const nameSpan = document.createElement('span');
       nameSpan.className = 'profile-name';
       nameSpan.textContent = name;
-
       const nameInput = document.createElement('input');
       nameInput.className = 'profile-name-input hidden';
       nameInput.type = 'text';
       nameInput.value = name;
-
       const renameBtn = document.createElement('button');
       renameBtn.className = 'profile-rename-btn';
       renameBtn.textContent = '✎';
       renameBtn.title = '重命名';
 
-      // Click name → edit mode
       let editing = false;
       function enterEdit() {
         if (editing) return;
@@ -4153,19 +4147,13 @@ function renderOpenCodeProfiles() {
         if (e.key === 'Escape') exitEdit(false);
       });
       nameInput.addEventListener('blur', () => exitEdit(true));
-
       nameBox.append(nameSpan, nameInput, renameBtn);
 
-      // Status
-      const statusSpan = document.createElement('span');
-      statusSpan.className = 'profile-status';
-      statusSpan.id = 'opencode-status-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      statusSpan.textContent = profile.enabled ? '...' : '已禁用';
-
-      // Balance
-      const balanceSpan = document.createElement('span');
-      balanceSpan.className = 'profile-balance';
-      balanceSpan.id = 'opencode-balance-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      // Info: status + balance combined
+      const infoSpan = document.createElement('span');
+      infoSpan.className = 'profile-info';
+      infoSpan.id = 'opencode-info-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      infoSpan.textContent = profile.enabled ? '...' : '已禁用';
 
       // Delete
       const deleteBtn = document.createElement('button');
@@ -4181,7 +4169,7 @@ function renderOpenCodeProfiles() {
         }
       });
 
-      item.append(toggle, nameBox, statusSpan, balanceSpan, deleteBtn);
+      item.append(toggle, nameBox, infoSpan, deleteBtn);
       listEl.appendChild(item);
     }
 
@@ -4196,24 +4184,24 @@ async function updateOpenCodeProfilesStatus() {
 
   for (const [name, s] of Object.entries(profiles)) {
     const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const statusEl = document.getElementById('opencode-status-' + safeName);
-    const balanceEl = document.getElementById('opencode-balance-' + safeName);
-    if (!statusEl) continue;
+    const infoEl = document.getElementById('opencode-info-' + safeName);
+    if (!infoEl) continue;
 
     if (s.expired) {
-      statusEl.textContent = 'Expired';
+      infoEl.textContent = '已过期';
     } else if (s.linked) {
       const parts = [];
       if (s.go) parts.push('Go');
       if (s.zen) parts.push('Zen');
-      statusEl.textContent = '✓ ' + parts.join(' · ');
-      if (balanceEl && s.hasBalance && s.balanceUsd != null) {
-        balanceEl.textContent = '$' + Number(s.balanceUsd).toFixed(2);
+      let text = '✓ ' + parts.join(' · ');
+      if (s.hasBalance && s.balanceUsd != null) {
+        text += '  $' + Number(s.balanceUsd).toFixed(2);
       }
+      infoEl.textContent = text;
     } else if (s.error) {
-      statusEl.textContent = s.error;
+      infoEl.textContent = s.error;
     } else {
-      statusEl.textContent = 'Disconnected';
+      infoEl.textContent = '连接失败';
     }
   }
 
@@ -4223,9 +4211,9 @@ async function updateOpenCodeProfilesStatus() {
     const linkedCount = Object.values(profiles).filter(s => s.linked).length;
     const totalCount = Object.keys(profiles).length;
     if (totalCount > 0) {
-      totalEl.textContent = linkedCount + '/' + totalCount + ' connected';
+      totalEl.textContent = linkedCount + '/' + totalCount + ' 已连接';
     } else {
-      totalEl.textContent = 'Not configured';
+      totalEl.textContent = '未配置';
     }
   }
 }
