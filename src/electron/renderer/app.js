@@ -143,7 +143,7 @@ state.settingsSections = Object.fromEntries(SETTINGS_SECTION_IDS.map((id) => [id
 const defaultAppearance = { glassOpacity: 68, glassBlur: 32, zoomFactor: 1, systemGlass: true, showLiveDot: true, showToolIcons: true, titleIconOnly: false, settingsInTitlebar: false };
 let preferenceDrag = null;
 const els = {
-  shell: document.querySelector('.shell'), status: document.getElementById('status'), liveDot: document.getElementById('liveDot'), totalTokens: document.getElementById('totalTokens'), cost: document.getElementById('cost'), breakdown: document.getElementById('breakdown'), serviceStatusPanel: document.getElementById('serviceStatusPanel'), limitsPanel: document.getElementById('limitsPanel'), trendsPanel: document.getElementById('trendsPanel'), breakdownToggle: document.getElementById('breakdownToggle'), pinButton: document.getElementById('pinButton'), settingsButton: document.getElementById('settingsButton'), settingsPanel: document.getElementById('settingsPanel'), languageInput: document.getElementById('languageInput'), currencyInput: document.getElementById('currencyInput'), hubUrlInput: document.getElementById('hubUrlInput'), secretInput: document.getElementById('secretInput'), deviceIdInput: document.getElementById('deviceIdInput'), limitProviderCheckboxes: document.getElementById('limitProviderCheckboxes'), limitsRefreshInput: document.getElementById('limitsRefreshInput'), showLimitSourceInput: document.getElementById('showLimitSourceInput'), showActiveAccountInput: document.getElementById('showActiveAccountInput'), systemGlassInput: document.getElementById('systemGlassInput'), liveDotInput: document.getElementById('liveDotInput'), toolIconsInput: document.getElementById('toolIconsInput'), floatingBubbleInput: document.getElementById('floatingBubbleInput'), floatingBubbleTriggerInput: document.getElementById('floatingBubbleTriggerInput'), floatingBubbleTriggerRow: document.getElementById('floatingBubbleTriggerRow'), floatingBubbleContentInput: document.getElementById('floatingBubbleContentInput'), floatingBubbleContentRow: document.getElementById('floatingBubbleContentRow'), floatingBubbleContent: document.getElementById('floatingBubbleContent'), discordRpcInput: document.getElementById('discordRpcInput'), windowBehaviorInput: document.getElementById('windowBehaviorInput'), showTrayIconInput: document.getElementById('showTrayIconInput'), trayModeInput: document.getElementById('trayModeInput'), trayContentInput: document.getElementById('trayContentInput'), windowToggleShortcutValue: document.getElementById('windowToggleShortcutValue'), windowToggleShortcutRecordButton: document.getElementById('windowToggleShortcutRecordButton'), windowToggleShortcutClearButton: document.getElementById('windowToggleShortcutClearButton'), windowToggleShortcutNote: document.getElementById('windowToggleShortcutNote'), glassInput: document.getElementById('glassInput'), blurInput: document.getElementById('blurInput'), zoomInput: document.getElementById('zoomInput'), resetGlassButton: document.getElementById('resetGlassButton'), resetDepthButton: document.getElementById('resetDepthButton'), resetZoomButton: document.getElementById('resetZoomButton'), saveSettingsButton: document.getElementById('saveSettingsButton'), clientDisplayList: document.getElementById('clientDisplayList'), openConfigButton: document.getElementById('openConfigButton'), refreshButton: document.getElementById('refreshButton'), minButton: document.getElementById('minButton'), closeButton: document.getElementById('closeButton'), floatingBubbleTab: document.getElementById('floatingBubbleTab')
+  shell: document.querySelector('.shell'), status: document.getElementById('status'), liveDot: document.getElementById('liveDot'), totalTokens: document.getElementById('totalTokens'), cost: document.getElementById('cost'), cacheRate: document.getElementById('cacheRate'), breakdown: document.getElementById('breakdown'), serviceStatusPanel: document.getElementById('serviceStatusPanel'), limitsPanel: document.getElementById('limitsPanel'), trendsPanel: document.getElementById('trendsPanel'), breakdownToggle: document.getElementById('breakdownToggle'), pinButton: document.getElementById('pinButton'), settingsButton: document.getElementById('settingsButton'), settingsPanel: document.getElementById('settingsPanel'), languageInput: document.getElementById('languageInput'), currencyInput: document.getElementById('currencyInput'), hubUrlInput: document.getElementById('hubUrlInput'), secretInput: document.getElementById('secretInput'), deviceIdInput: document.getElementById('deviceIdInput'), limitProviderCheckboxes: document.getElementById('limitProviderCheckboxes'), limitsRefreshInput: document.getElementById('limitsRefreshInput'), showLimitSourceInput: document.getElementById('showLimitSourceInput'), showActiveAccountInput: document.getElementById('showActiveAccountInput'), systemGlassInput: document.getElementById('systemGlassInput'), liveDotInput: document.getElementById('liveDotInput'), toolIconsInput: document.getElementById('toolIconsInput'), floatingBubbleInput: document.getElementById('floatingBubbleInput'), floatingBubbleTriggerInput: document.getElementById('floatingBubbleTriggerInput'), floatingBubbleTriggerRow: document.getElementById('floatingBubbleTriggerRow'), floatingBubbleContentInput: document.getElementById('floatingBubbleContentInput'), floatingBubbleContentRow: document.getElementById('floatingBubbleContentRow'), floatingBubbleContent: document.getElementById('floatingBubbleContent'), discordRpcInput: document.getElementById('discordRpcInput'), windowBehaviorInput: document.getElementById('windowBehaviorInput'), showTrayIconInput: document.getElementById('showTrayIconInput'), trayModeInput: document.getElementById('trayModeInput'), trayContentInput: document.getElementById('trayContentInput'), windowToggleShortcutValue: document.getElementById('windowToggleShortcutValue'), windowToggleShortcutRecordButton: document.getElementById('windowToggleShortcutRecordButton'), windowToggleShortcutClearButton: document.getElementById('windowToggleShortcutClearButton'), windowToggleShortcutNote: document.getElementById('windowToggleShortcutNote'), glassInput: document.getElementById('glassInput'), blurInput: document.getElementById('blurInput'), zoomInput: document.getElementById('zoomInput'), resetGlassButton: document.getElementById('resetGlassButton'), resetDepthButton: document.getElementById('resetDepthButton'), resetZoomButton: document.getElementById('resetZoomButton'), saveSettingsButton: document.getElementById('saveSettingsButton'), clientDisplayList: document.getElementById('clientDisplayList'), openConfigButton: document.getElementById('openConfigButton'), refreshButton: document.getElementById('refreshButton'), minButton: document.getElementById('minButton'), closeButton: document.getElementById('closeButton'), floatingBubbleTab: document.getElementById('floatingBubbleTab')
 };
 Object.assign(els, {
   floatingBubbleOptions: document.getElementById('floatingBubbleOptions'),
@@ -1595,6 +1595,17 @@ function render() {
   }
   state.currentTotal = nextTotal;
   els.cost.textContent = formatCost(period.costUsd || 0);
+  // Cache hit rate
+  const cacheRead = period.cacheReadTokens || 0;
+  const outputTokens = period.outputTokens || 0;
+  const inputTokens = nextTotal - outputTokens;
+  if (cacheRead > 0 && inputTokens > 0) {
+    const hitPct = Math.round((cacheRead / inputTokens) * 100);
+    els.cacheRate.textContent = 'Cache hit: ' + hitPct + '%';
+    els.cacheRate.classList.remove('hidden');
+  } else {
+    els.cacheRate.classList.add('hidden');
+  }
   if (!state.refreshBusy && !state.refreshFeedbackTimer) setRefreshButtonState('idle');
   const devices = state.stats.devices || [];
   const staleCount = devices.filter((device) => device.stale).length;
@@ -4055,40 +4066,43 @@ function renderOpenCodeProfiles() {
     const entries = Object.entries(profiles);
 
     if (entries.length === 0 && !hasEnvVar) {
-      const msg = document.createElement('p');
-      msg.className = 'settings-note';
-      msg.textContent = 'No profiles configured. Add one below.';
-      listEl.appendChild(msg);
+      listEl.innerHTML = '<p class="settings-note">尚未配置账号。在下方输入任意名称（如 work、personal）和 cookie 来添加多个 OpenCode 账号。</p>';
       state.opencodeProfileCount = 0;
       return;
     }
 
     state.opencodeProfileCount = entries.length;
 
+    // 表头
+    const header = document.createElement('div');
+    header.className = 'opencode-profile-header';
+    header.innerHTML = '<span class="ph-toggle"></span><span class="ph-name">名称</span><span class="ph-status">状态</span><span class="ph-balance">余额</span><span class="ph-action"></span>';
+    listEl.appendChild(header);
+
     for (const [name, profile] of entries) {
       const item = document.createElement('div');
       item.className = 'opencode-profile-item';
 
-      // Toggle checkbox
+      // Toggle
       const toggle = document.createElement('input');
       toggle.type = 'checkbox';
       toggle.className = 'profile-toggle';
       toggle.checked = profile.enabled;
       toggle.addEventListener('change', () => {
         api.setProfileEnabled(name, toggle.checked).then(() => {
-          statusSpan.textContent = toggle.checked ? '...' : '(disabled)';
+          statusSpan.textContent = toggle.checked ? '...' : '(已禁用)';
           if (balanceSpan) balanceSpan.textContent = '';
           renderSettingsSummaries();
         });
       });
 
-      // Name (click to rename)
+      // Name
       const nameSpan = document.createElement('span');
       nameSpan.className = 'profile-name';
       nameSpan.textContent = name;
-      nameSpan.title = 'Click to rename';
+      nameSpan.title = '点击重命名';
       nameSpan.addEventListener('click', () => {
-        const newName = prompt('Rename "' + name + '" to:', name);
+        const newName = prompt('将 "' + name + '" 重命名为:', name);
         if (newName && newName.trim() && newName.trim() !== name) {
           api.renameProfile(name, newName.trim()).then(() => {
             renderOpenCodeProfiles();
@@ -4102,7 +4116,7 @@ function renderOpenCodeProfiles() {
       const statusSpan = document.createElement('span');
       statusSpan.className = 'profile-status';
       statusSpan.id = 'opencode-status-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      statusSpan.textContent = profile.enabled ? '...' : '(disabled)';
+      statusSpan.textContent = profile.enabled ? '...' : '(已禁用)';
 
       // Balance
       const balanceSpan = document.createElement('span');
@@ -4113,9 +4127,9 @@ function renderOpenCodeProfiles() {
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'profile-delete';
       deleteBtn.textContent = '✕';
-      deleteBtn.title = 'Delete profile';
+      deleteBtn.title = '删除此账号';
       deleteBtn.addEventListener('click', async () => {
-        if (confirm('Delete profile "' + name + '"?')) {
+        if (confirm('确定删除账号 "' + name + '" 吗？')) {
           await api.deleteProfile(name);
           renderOpenCodeProfiles();
           updateOpenCodeProfilesStatus();

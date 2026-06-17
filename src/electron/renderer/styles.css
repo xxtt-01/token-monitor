@@ -2206,45 +2206,81 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 .opencode-profile-list {
   margin-bottom: 12px;
 }
-.opencode-profile-item {
-  display: flex;
-  align-items: center;
+.opencode-profile-header {
+  display: grid;
+  grid-template-columns: 24px 1fr 120px 80px 28px;
   gap: 8px;
+  padding: 4px 8px;
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.opencode-profile-header .ph-toggle { grid-column: 1; }
+.opencode-profile-header .ph-name { grid-column: 2; }
+.opencode-profile-header .ph-status { grid-column: 3; }
+.opencode-profile-header .ph-balance { grid-column: 4; text-align: right; }
+.opencode-profile-header .ph-action { grid-column: 5; }
+
+.opencode-profile-item {
+  display: grid;
+  grid-template-columns: 24px 1fr 120px 80px 28px;
+  gap: 8px;
+  align-items: center;
   padding: 6px 8px;
   border-radius: 6px;
   background: var(--surface-color, rgba(255,255,255,0.05));
   margin-bottom: 4px;
 }
+.opencode-profile-item .profile-toggle {
+  grid-column: 1;
+}
 .opencode-profile-item .profile-name {
-  flex: 1;
+  grid-column: 2;
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .opencode-profile-item .profile-name:hover {
   text-decoration: underline;
+  color: var(--accent-color, #73bdf5);
 }
 .opencode-profile-item .profile-status {
+  grid-column: 3;
   font-size: 11px;
   color: var(--text-secondary, #888);
 }
 .opencode-profile-item .profile-balance {
+  grid-column: 4;
   font-size: 11px;
   color: var(--accent-color, #73bdf5);
-  margin-left: auto;
+  text-align: right;
 }
 .opencode-profile-item .profile-delete {
+  grid-column: 5;
   flex-shrink: 0;
   background: none;
   border: none;
   color: var(--danger-color, #e74c3c);
   cursor: pointer;
-  font-size: 16px;
-  padding: 2px 6px;
+  font-size: 14px;
+  padding: 2px 4px;
   border-radius: 4px;
+  opacity: 0.6;
 }
 .opencode-profile-item .profile-delete:hover {
+  opacity: 1;
   background: rgba(231, 76, 60, 0.15);
 }
 .opencode-profile-item.env-profile {
   opacity: 0.7;
+}
+
+.cache-rate {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  margin-top: 2px;
 }

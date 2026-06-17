@@ -72,3 +72,18 @@
 - **原因:** `extractUsageFromTokscale` 中 `tokenValue(row)` 求和了所有组件（input+output+cacheRead），但 input 已包含 cacheRead per API 规范（Anthropic、OpenAI 等），导致 cacheRead 被重复计数
 - **决策:** 当 cacheRead 存在时，改用 `input + output` 作为 totalTokens。cacheRead 仍独立记录用于详情展示。字段缺失时回退到原 tokenValue 逻辑
 - **影响范围:** 所有工具的今日/本月/全部 Token 总量显示
+
+## 2026-06-18 01:30: 增加缓存命中率显示，改进 Profile 列表 UI
+- **文件:**
+  - `src/electron/renderer/index.html`
+  - `src/electron/renderer/app.js`
+  - `src/electron/renderer/styles.css`
+- **原因:**
+  - 用户需要直观看到缓存命中率
+  - Profile 列表 UI 丑且缺少引导
+- **决策:**
+  - 主统计栏新增缓存命中率显示（`总 tokens 数 → 费用 → Cache hit: XX%`）
+  - Profile 列表改用 grid 布局，新增表头列（名称、状态、余额）
+  - 空状态添加中文引导文字
+  - 所有按钮/提示改为中文
+- **影响范围:** 主界面统计显示、设置面板 OpenCode 账号管理
