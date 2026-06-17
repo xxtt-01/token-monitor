@@ -1764,10 +1764,75 @@ async function fetchOpenCodeLimits(options = {}, deps = {}) {
   const fetchGoWeb = deps.opencodeFetchGoWeb || ((cookie, d) => opencodeWeb.fetchGoWeb(cookie, d));
   const fetchZen = deps.opencodeFetchZen || ((cookie, d) => opencodeWeb.fetchZen(cookie, d));
 
+  // Determine cookie sources: explicit profiles > legacy single cookie > env var
+  const explicitProfiles = options.opencodeProfiles;
+  const envCookie = (deps.env || process.env).TOKEN_MONITOR_OPENCODE_COOKIE || '';
+
+  let cookies = [];
+  if (explicitProfiles && Object.keys(explicitProfiles).length > 0) {
+    for (const [name, p] of Object.entries(explicitProfiles)) {
+      if (p.enabled && p.cookie) cookies.push({ name, cookie: p.cookie });
+    }
+  } else if (options.opencodeCookie) {
+    cookies = [{ name: 'default', cookie: options.opencodeCookie }];
+  }
+
+  // Env var — show only if its cookie isn't already in a profile
+  if (envCookie && !cookies.some((c) => c.cookie === envCookie)) {
+    cookies.push({ name: 'default (env)', cookie: envCookie });
+  }
+
+  const goLocal = collectGo({ env: deps.env || process.env, now: () => nowMs });
+
+  // ── Single account (<1 cookie): OLD merged behavior ──────────────────────
+  if (cookies.length <= 1) {
+    const cookie = cookies[0]?.cookie;
+    const [goWeb, zen] = cookie
+      ? await Promise.all([
+          fetchGoWeb(cookie, { now: () => nowMs }),
+          fetchZen(cookie, { now: () => nowMs, workspaceId: '' })
+        ])
+      : [null, null];
+
+    const windows = [];
+    let status = 'notConfigured';
+    let source = 'local';
+    let accountLabel = '';
+    let accountKey = '';
+    let balanceUsd = null;
+
+    if (goWeb && goWeb.status === 'ok' && goWeb.windows.length > 0) {
+      windows.push(...goWeb.windows);
+      status = 'ok'; source = 'web'; accountLabel = 'Go';
+      accountKey = hashKey('opencode', `go:${goWeb.workspaceId || ''}`);
+    } else if (goLocal.status === 'ok') {
+      windows.push(...goLocal.windows);
+      status = 'ok'; accountLabel = 'Go';
+      accountKey = hashKey('opencode', goLocal.identity || 'go');
+    } else if (goLocal.status === 'unavailable') {
+      status = 'unavailable';
+    }
+
+    if (zen && zen.status === 'ok') {
+      windows.push(...zen.windows);
+      status = 'ok'; source = 'web';
+      if (typeof zen.balanceUsd === 'number' && Number.isFinite(zen.balanceUsd)) balanceUsd = zen.balanceUsd;
+      if (!accountLabel) accountLabel = 'Zen';
+      if (!accountKey) accountKey = hashKey('opencode', `zen:${zen.workspaceId || ''}`);
+    } else if (status !== 'ok') {
+      const webFail = ['unauthorized', 'sourceRateLimited', 'unavailable'];
+      const surfaced = (goWeb && webFail.includes(goWeb.status) && goWeb.status)
+        || (zen && webFail.includes(zen.status) && zen.status);
+      if (surfaced) { status = surfaced; source = 'web'; }
+    }
+
+    return normalizeLimitProvider({ provider: 'opencode', accountKey, accountLabel, source, status, updatedAt, windows, balanceUsd });
+  }
+
+  // ── Multi-account (2+ cookies): separate per-profile providers ────────────
   const providers = [];
 
-  // 1. Local usage (total across all accounts, from SQLite)
-  const goLocal = collectGo({ env: deps.env || process.env, now: () => nowMs });
+  // Local usage (total across all accounts)
   if (goLocal.status === 'ok') {
     providers.push(normalizeLimitProvider({
       provider: 'opencode',
@@ -1780,23 +1845,38 @@ async function fetchOpenCodeLimits(options = {}, deps = {}) {
     }));
   }
 
-  // 2. Per-profile server-side limits
-  const profiles = options.opencodeProfiles || {};
-  const envCookie = (deps.env || process.env).TOKEN_MONITOR_OPENCODE_COOKIE || '';
+  // Each enabled profile
+  for (const { name, cookie } of cookies) {
+    const [goWeb, zen] = await Promise.all([
+      fetchGoWeb(cookie, { now: () => nowMs }),
+      fetchZen(cookie, { now: () => nowMs, workspaceId: '' })
+    ]);
+    const pWindows = [];
+    let pStatus = 'notConfigured';
+    let pBalance = null;
+    if (goWeb && goWeb.status === 'ok' && goWeb.windows.length > 0) {
+      pWindows.push(...goWeb.windows);
+      pStatus = 'ok';
+    }
+    if (zen && zen.status === 'ok') {
+      pWindows.push(...zen.windows);
+      pStatus = 'ok';
+      if (typeof zen.balanceUsd === 'number' && Number.isFinite(zen.balanceUsd)) pBalance = zen.balanceUsd;
+    }
+    if (pStatus !== 'ok') pStatus = goWeb?.status || zen?.status || 'unauthorized';
 
-  for (const [name, profile] of Object.entries(profiles)) {
-    if (!profile.enabled || !profile.cookie) continue;
-    const provider = await fetchSingleOpenCodeProfile(name, profile.cookie, fetchGoWeb, fetchZen, nowMs, updatedAt);
-    if (provider) providers.push(provider);
+    providers.push(normalizeLimitProvider({
+      provider: 'opencode',
+      accountKey: hashKey('opencode', name),
+      accountLabel: name,
+      source: 'web',
+      status: pStatus,
+      updatedAt,
+      windows: pWindows,
+      balanceUsd: pBalance
+    }));
   }
 
-  // 3. Legacy env var cookie (show only if not already in a profile)
-  if (envCookie && !Object.values(profiles).some(p => p.cookie === envCookie)) {
-    const provider = await fetchSingleOpenCodeProfile('default (env)', envCookie, fetchGoWeb, fetchZen, nowMs, updatedAt);
-    if (provider) providers.push(provider);
-  }
-
-  // 4. Fallback: nothing configured
   if (providers.length === 0) {
     providers.push(normalizeLimitProvider({
       provider: 'opencode', accountKey: '', accountLabel: '',

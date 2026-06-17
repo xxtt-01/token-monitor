@@ -41,3 +41,14 @@
   - app.js: 移除了 `state.opencodeAccount` 状态追踪，改用 `state.opencodeProfileCount`
   - app.js: 事件绑定改为使用 `saveProfile`/`deleteProfile`/`renameProfile`/`setProfileEnabled` IPC API
 - **影响范围:** 设置面板 OpenCode 多账号管理 UI
+
+## 2026-06-17 19:30: 兼容单 cookie 传参方式，修复测试回归
+- **文件:**
+  - `src/shared/limitCollector.js`
+- **原因:** `fetchOpenCodeLimits` 重写后只读 `opencodeProfiles`，旧代码和测试传的是 `opencodeCookie`，导致 7 个测试失败
+- **根因:** 新旧接口不兼容，单 cookie 传参方式未做向后兼容
+- **决策:**
+  - `fetchOpenCodeLimits` 改为双路径：单 cookie（≤1 个源）走旧合并逻辑，多 cookie（2+ 个源）走新分离逻辑
+  - 单 cookie 保留原有 Go web > Go local > Zen 的合并行为，确保测试和旧 API 兼容
+  - 多 cookie 时每个 profile 独立查询，本地 Local 作为独立 provider
+- **影响范围:** `fetchOpenCodeLimits` 函数逻辑
