@@ -4078,21 +4078,12 @@ function renderOpenCodeProfiles() {
 
     state.opencodeProfileCount = entries.length;
 
-    // 表头
-    const header = document.createElement('div');
-    header.className = 'opencode-profile-header';
-    header.innerHTML = '<span></span><span>名称</span><span class="ph-info">状态 · 余额</span><span></span>';
-    listEl.appendChild(header);
-
     for (const [name, profile] of entries) {
       const item = document.createElement('div');
       item.className = 'opencode-profile-item';
-      item.dataset.profileName = name;
 
-      // Toggle
       const toggle = document.createElement('input');
       toggle.type = 'checkbox';
-      toggle.className = 'profile-toggle';
       toggle.checked = profile.enabled;
       toggle.addEventListener('change', () => {
         api.setProfileEnabled(name, toggle.checked).then(() => {
@@ -4102,21 +4093,61 @@ function renderOpenCodeProfiles() {
         });
       });
 
-      // Name — 点击通过 IPC 对话框重命名
       const nameBox = document.createElement('span');
       nameBox.className = 'profile-name-box';
       const nameSpan = document.createElement('span');
       nameSpan.className = 'profile-name';
       nameSpan.textContent = name;
-      nameBox.append(nameSpan);
 
-      // Info: status + balance combined
+      const nameInput = document.createElement('input');
+      nameInput.className = 'profile-name-input hidden';
+      nameInput.type = 'text';
+      nameInput.value = name;
+
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'profile-rename-btn';
+      renameBtn.textContent = '✎';
+      renameBtn.title = '重命名';
+
+      let editing = false;
+      function beginRename() {
+        if (editing) return;
+        editing = true;
+        nameSpan.classList.add('hidden');
+        nameInput.classList.remove('hidden');
+        nameInput.focus();
+        nameInput.select();
+      }
+      function endRename(save) {
+        if (!editing) return;
+        editing = false;
+        nameInput.classList.add('hidden');
+        nameSpan.classList.remove('hidden');
+        if (save && nameInput.value.trim() && nameInput.value.trim() !== name) {
+          api.renameProfile(name, nameInput.value.trim()).then(() => {
+            renderOpenCodeProfiles();
+            updateOpenCodeProfilesStatus();
+            renderSettingsSummaries();
+          });
+        }
+      }
+      renameBtn.addEventListener('click', beginRename);
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') endRename(true);
+        if (e.key === 'Escape') endRename(false);
+      });
+      nameInput.addEventListener('blur', () => endRename(true));
+
+      nameBox.append(nameSpan, nameInput, renameBtn);
+
+      const rightBox = document.createElement('span');
+      rightBox.className = 'profile-right';
+
       const infoSpan = document.createElement('span');
       infoSpan.className = 'profile-info';
       infoSpan.id = 'opencode-info-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
       infoSpan.textContent = profile.enabled ? '...' : '已禁用';
 
-      // Delete
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'profile-delete';
       deleteBtn.textContent = '✕';
@@ -4130,15 +4161,14 @@ function renderOpenCodeProfiles() {
         }
       });
 
-      item.append(toggle, nameBox, infoSpan, deleteBtn);
+      rightBox.append(infoSpan, deleteBtn);
+      item.append(toggle, nameBox, rightBox);
       listEl.appendChild(item);
     }
 
     updateOpenCodeProfilesStatus();
   });
-}
-
-async function updateOpenCodeProfilesStatus() {
+}async function updateOpenCodeProfilesStatus() {
   const api = window.tokenMonitor.opencode;
   const status = await api.status();
   const profiles = status.profiles || {};

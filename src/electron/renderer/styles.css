@@ -2212,25 +2212,11 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   font-size: 13px;
   text-align: center;
 }
-.opencode-profile-header,
 .opencode-profile-item {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto 20px;
-  gap: 4px;
+  grid-template-columns: 24px 1fr auto;
+  gap: 6px;
   align-items: center;
-}
-.opencode-profile-header {
-  padding: 2px 8px 4px;
-  font-size: 11px;
-  color: var(--text-secondary, #888);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  margin-bottom: 4px;
-}
-.opencode-profile-header .ph-info {
-  text-align: right;
-}
   padding: 6px 8px;
   border-radius: 6px;
   transition: background 0.15s;
@@ -2255,15 +2241,49 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   padding: 2px 4px;
   border-radius: 3px;
 }
+.opencode-profile-item .profile-name-input {
+  font-size: 13px;
+  padding: 2px 4px;
+  border: 1px solid var(--accent-color, #73bdf5);
+  border-radius: 3px;
+  background: rgba(0,0,0,0.2);
+  color: inherit;
+  min-width: 60px;
+  outline: none;
+}
+.opencode-profile-item .profile-rename-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.opencode-profile-item:hover .profile-rename-btn {
+  opacity: 0.6;
+}
+.opencode-profile-item .profile-rename-btn:hover {
+  opacity: 1;
+  color: var(--accent-color, #73bdf5);
+  background: rgba(115, 189, 245, 0.1);
+}
+.opencode-profile-item .profile-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
 .opencode-profile-item .profile-info {
   font-size: 12px;
   color: var(--text-secondary, #888);
   white-space: nowrap;
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .opencode-profile-item .profile-delete {
-  justify-self: center;
   background: none;
   border: none;
   color: var(--text-secondary, #888);
@@ -2275,18 +2295,14 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   transition: opacity 0.15s;
 }
 .opencode-profile-item:hover .profile-delete {
-  opacity: 1;
+  opacity: 0.5;
 }
 .opencode-profile-item .profile-delete:hover {
+  opacity: 1;
   color: var(--danger-color, #e74c3c);
   background: rgba(231, 76, 60, 0.15);
 }
-.opencode-profile-item.env-profile {
-  opacity: 0.6;
-}
-
-/* 添加账号 — 高级感折叠面板 */
-.opencode-add-form {
+.opencode-add-form {.opencode-add-form {
   margin-top: 12px;
   border-radius: 8px;
   overflow: hidden;
