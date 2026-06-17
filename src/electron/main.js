@@ -185,6 +185,7 @@ function defaultSettings() {
     startAtLogin: false,
     language: 'auto',
     opencodeCookie: '',
+    opencodeProfiles: {},
     deepseekApiKey: '',
     codexManagedAccounts: [],
     appUpdate: {
@@ -792,6 +793,10 @@ function readSettings() {
     merged.floatingBubbleTrigger = merged.floatingBubbleTrigger === 'hover' ? 'hover' : 'click';
     merged.floatingBubbleContent = normalizeTrayContent(merged.floatingBubbleContent, 'icon');
     merged.windowToggleShortcut = normalizeWindowToggleShortcut(merged.windowToggleShortcut);
+    // 如果设置了 opencodeCookie 但没有 profiles，自动迁移
+    if (merged.opencodeCookie && Object.keys(merged.opencodeProfiles || {}).length === 0) {
+      merged.opencodeProfiles = { default: { cookie: merged.opencodeCookie, enabled: true } };
+    }
     Object.assign(merged, normalizeTrayModeSettings(merged));
     return normalizeWindowBehaviorSettings(merged);
   }
@@ -1100,6 +1105,7 @@ function startSyncCollector() {
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     opencodeCookie: settings.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '',
+    opencodeProfiles: settings.opencodeProfiles || {},
     deepseekApiKey: settings.deepseekApiKey || '',
     codexManagedAccounts: codexManagedAccountsForCollector(),
     onUpdate: async (summary) => {
@@ -1138,6 +1144,7 @@ function startHostCollector() {
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     opencodeCookie: settings.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '',
+    opencodeProfiles: settings.opencodeProfiles || {},
     deepseekApiKey: settings.deepseekApiKey || '',
     codexManagedAccounts: codexManagedAccountsForCollector(),
     onUpdate: (summary) => {
@@ -1267,6 +1274,7 @@ function startLocalCollector() {
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     opencodeCookie: settings.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '',
+    opencodeProfiles: settings.opencodeProfiles || {},
     deepseekApiKey: settings.deepseekApiKey || '',
     codexManagedAccounts: codexManagedAccountsForCollector(),
     onUpdate: (summary, reason) => {
@@ -2034,6 +2042,10 @@ let opencodeStatusCache = { value: null, at: 0 };
 const CURSOR_STATUS_TTL_MS = 30 * 1000;
 
 function currentOpenCodeCookie() {
+  // 优先使用 profiles 中的第一个启用 cookie
+  const profiles = settings?.opencodeProfiles || {};
+  const enabled = Object.entries(profiles).find(([, p]) => p.enabled);
+  if (enabled) return enabled[1].cookie || '';
   return settings?.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '';
 }
 
@@ -2412,6 +2424,7 @@ app.whenReady().then(() => {
   ipcMain.handle('opencode:saveCookie', async (_event, raw) => {
     const cookie = opencodeWeb.sanitizeCookieHeader(raw);
     if (!cookie) {
+      settings.opencodeProfiles = {};
       settings.opencodeCookie = '';
       saveSettings();
       opencodeStatusCache = { value: null, at: 0 };
@@ -2419,8 +2432,6 @@ app.whenReady().then(() => {
       return { ok: true, cleared: true };
     }
     try {
-      // Accept the cookie if EITHER Go or Zen authorizes it; only reject when
-      // both report it unauthorized (a genuinely expired/invalid session).
       const [go, zen] = await Promise.all([
         opencodeWeb.fetchGoWeb(cookie, {}),
         opencodeWeb.fetchZen(cookie, {})
@@ -2428,6 +2439,9 @@ app.whenReady().then(() => {
       if (opencodeWeb.summarizeLink(go, zen).expired) {
         return { ok: false, error: 'OpenCode rejected the cookie (it may be expired)' };
       }
+      const profiles = settings.opencodeProfiles || {};
+      profiles.default = { cookie, enabled: true };
+      settings.opencodeProfiles = profiles;
       settings.opencodeCookie = cookie;
       saveSettings();
       opencodeStatusCache = { value: null, at: 0 };
@@ -2448,6 +2462,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('opencode:logout', async () => {
     try {
+      settings.opencodeProfiles = {};
       settings.opencodeCookie = '';
       saveSettings();
       opencodeStatusCache = { value: null, at: 0 };
@@ -2486,7 +2501,26 @@ app.whenReady().then(() => {
     if (opencodeStatusCache.value && now - opencodeStatusCache.at < CURSOR_STATUS_TTL_MS) {
       return opencodeStatusCache.value;
     }
-    const value = await readOpenCodeStatus();
+    const profiles = settings.opencodeProfiles || {};
+    const result = {};
+    for (const [name, profile] of Object.entries(profiles)) {
+      if (!profile.cookie) continue;
+      const [go, zen] = await Promise.all([
+        opencodeWeb.fetchGoWeb(profile.cookie, {}),
+        opencodeWeb.fetchZen(profile.cookie, {})
+      ]);
+      result[name] = { ...opencodeWeb.summarizeLink(go, zen), balanceUsd: zen.balanceUsd };
+    }
+    // 传统 env cookie
+    const envCookie = process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '';
+    if (envCookie) {
+      const [go, zen] = await Promise.all([
+        opencodeWeb.fetchGoWeb(envCookie, {}),
+        opencodeWeb.fetchZen(envCookie, {})
+      ]);
+      result['env'] = { ...opencodeWeb.summarizeLink(go, zen), balanceUsd: zen.balanceUsd, env: true };
+    }
+    const value = { profiles: result, linked: Object.values(result).some(s => s.linked) };
     opencodeStatusCache = { value, at: now };
     return value;
   });

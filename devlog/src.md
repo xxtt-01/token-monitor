@@ -1,0 +1,13 @@
+## 2026-06-17 18:00: 多账号采集 — 每个 profile 独立查询限额
+- **文件:**
+  - `src/shared/limitCollector.js`
+  - `src/shared/limits.js`
+  - `src/electron/main.js`
+- **原因:** 支持 OpenCode 多账号配置，每个 profile 独立采集限额数据
+- **决策:**
+  - `fetchOpenCodeLimits` 改为接收 `opencodeProfiles` 对象，返回 provider 数组
+  - 新增 `fetchSingleOpenCodeProfile` 辅助函数处理单个 profile 的 Go/Zen 查询
+  - `providerCollapseKey` 增加 opencode 配置账号不走聚合，确保每个 profile 独立显示
+  - main.js 添加 `opencodeProfiles` 配置字段和旧 `opencodeCookie` 迁移逻辑
+  - 本地 Local（SQLite）作为独立 provider 始终显示
+- **影响范围:** 限额采集流程、UI 显示聚合逻辑、Electron 主进程配置传递
