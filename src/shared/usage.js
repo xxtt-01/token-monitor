@@ -441,7 +441,13 @@ function extractUsageFromTokscale(json) {
     const client = detectClient(row);
     let model = detectModel(row);
     if (client === 'cursor' && model === 'auto') model = 'cursor-auto';
-    period.totalTokens += Math.max(0, Math.round(tokens));
+    // tokenValue sums all component keys (input+output+cacheRead).
+    // input already includes cacheRead per API convention (Anthropic, OpenAI, etc.),
+    // so adding cacheRead separately would double-count.
+    // Use input+output when input is available, fall back to tokenValue for other formats.
+    const inputTokens = Math.max(0, Math.round(firstNumber(row, INPUT_TOKEN_KEYS)));
+    const adjustedTokens = cacheRead > 0 && inputTokens > 0 ? inputTokens + output : tokens;
+    period.totalTokens += Math.max(0, Math.round(adjustedTokens));
     period.costUsd += cost;
     period.cacheReadTokens += cacheRead;
     period.cacheWriteTokens += cacheWrite;

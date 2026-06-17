@@ -65,3 +65,10 @@
   - 多账号路径复用 `fetchSingleOpenCodeProfile` 去重
   - Profile 切换/删除后即时调用 `renderSettingsSummaries()` 更新摘要 pill
 - **影响范围:** 代码质量、UI 响应性
+
+## 2026-06-18 01:00: 修复 totalTokens 重复计算 cacheRead
+- **文件:**
+  - `src/shared/usage.js`
+- **原因:** `extractUsageFromTokscale` 中 `tokenValue(row)` 求和了所有组件（input+output+cacheRead），但 input 已包含 cacheRead per API 规范（Anthropic、OpenAI 等），导致 cacheRead 被重复计数
+- **决策:** 当 cacheRead 存在时，改用 `input + output` 作为 totalTokens。cacheRead 仍独立记录用于详情展示。字段缺失时回退到原 tokenValue 逻辑
+- **影响范围:** 所有工具的今日/本月/全部 Token 总量显示
