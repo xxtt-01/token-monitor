@@ -1175,6 +1175,26 @@ function renderCodexAccountGroup(label, providers, color) {
   return row;
 }
 
+function renderOpenCodeAccountGroup(label, providers, color) {
+  const row = document.createElement('div');
+  row.className = 'limit-row limit-row-group';
+  const groupProvider = { provider: 'opencode', status: 'ok', windows: [] };
+  const head = renderLimitProviderHead('opencode', label, groupProvider, color, {
+    planText: providers.length + ' accounts',
+    hideMeta: true
+  });
+  const accountList = document.createElement('div');
+  accountList.className = 'limit-account-list';
+  providers.forEach((provider) => {
+    accountList.append(renderLimitProviderRow('opencode', provider.accountLabel || 'OpenCode', provider, color, {
+      accountRow: true,
+      showIcon: false
+    }));
+  });
+  row.append(head, accountList);
+  return row;
+}
+
 function renderLimits() {
   if (!els.limitsPanel) return;
   const limitsEnabled = state.settings?.limitsEnabled !== false;
@@ -1199,6 +1219,10 @@ function renderLimits() {
     const color = clientColors[id] || clientColors.default;
     if (id === 'codex' && Array.isArray(visibleProviders) && visibleProviders.length > 1) {
       nodes.push(renderCodexAccountGroup(label, visibleProviders, color));
+      continue;
+    }
+    if (id === 'opencode' && Array.isArray(visibleProviders) && visibleProviders.length > 1) {
+      nodes.push(renderOpenCodeAccountGroup(label, visibleProviders, color));
       continue;
     }
     const provider = Array.isArray(visibleProviders) ? visibleProviders[0] : visibleProviders;

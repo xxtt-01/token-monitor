@@ -106,3 +106,10 @@
   - 重命名用 inline input 替代 prompt，回车保存 Esc 取消
   - 添加通用 `.hidden { display: none !important }` 类
 - **影响范围:** 设置面板、Token 总量统计、缓存命中率
+
+## 2026-06-18 02:30: 额度视图支持多 opencode 账号展示
+- **文件:**
+  - `src/electron/renderer/app.js`
+- **原因:** `renderLimits` 中多账号时只取了 `visibleProviders[0]`，后面的 opencode 账号被静默丢弃
+- **决策:** 新增 `renderOpenCodeAccountGroup`，参照 Codex 多账号模式展开显示所有 profile 的日/周/月额度
+- **影响范围:** 额度面板 OpenCode 多账号显示
