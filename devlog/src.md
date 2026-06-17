@@ -87,3 +87,22 @@
   - 空状态添加中文引导文字
   - 所有按钮/提示改为中文
 - **影响范围:** 主界面统计显示、设置面板 OpenCode 账号管理
+
+## 2026-06-18 02:00: 重做添加账号 UI + 修复 totalTokens/cacheRead 多次回退
+- **文件:**
+  - `src/electron/renderer/index.html`
+  - `src/electron/renderer/app.js`
+  - `src/electron/renderer/styles.css`
+  - `src/shared/usage.js`
+- **原因:**
+  - 添加账号面板太简陋
+  - totalTokens 和 cacheRead 的关系判断错误，来回回退三次
+  - inline 编辑在 Electron 沙箱中不可用（prompt 被禁用）
+- **决策:**
+  - 添加账号改用玻璃拟态折叠面板 + SVG 图标 + 渐变按钮
+  - totalTokens = input + output（input 已含 cacheRead，符合业界标准）
+  - 缓存命中率 = cacheRead / input * 100
+  - Profile 列表改用三列 grid 布局（复选框 | 名称+✎ | 状态+删除）
+  - 重命名用 inline input 替代 prompt，回车保存 Esc 取消
+  - 添加通用 `.hidden { display: none !important }` 类
+- **影响范围:** 设置面板、Token 总量统计、缓存命中率
