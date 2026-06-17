@@ -1595,12 +1595,12 @@ function render() {
   }
   state.currentTotal = nextTotal;
   els.cost.textContent = formatCost(period.costUsd || 0);
-  // Cache hit rate = cacheRead / (input + cacheRead) = cacheRead / (totalTokens - output)
+  // Cache hit rate = cacheRead / input  (input 是总输入，已含 cacheRead)
   const cacheReadVal = period.cacheReadTokens || 0;
   const outputTokensVal = period.outputTokens || 0;
-  const totalInputVal = nextTotal - outputTokensVal; // input + cacheRead
-  if (cacheReadVal > 0 && totalInputVal > 0) {
-    const hitPct = Math.round((cacheReadVal / totalInputVal) * 100);
+  const inputTotal = nextTotal - outputTokensVal; // 总 input（含 cacheRead）
+  if (cacheReadVal > 0 && inputTotal > 0) {
+    const hitPct = Math.round((cacheReadVal / inputTotal) * 100);
     els.cacheRate.textContent = '⚡ Cache hit: ' + hitPct + '%';
     els.cacheRate.classList.remove('hidden');
     const r = Math.round(255 * (1 - hitPct / 100) * 2);

@@ -441,7 +441,10 @@ function extractUsageFromTokscale(json) {
     const client = detectClient(row);
     let model = detectModel(row);
     if (client === 'cursor' && model === 'auto') model = 'cursor-auto';
-    period.totalTokens += Math.max(0, Math.round(tokens));
+    // input 是总输入（含 cacheRead），不重复加 cacheRead 到 total
+    const inputTokens = Math.max(0, Math.round(firstNumber(row, INPUT_TOKEN_KEYS)));
+    const adjustedTokens = cacheRead > 0 && inputTokens > 0 ? inputTokens + output : tokens;
+    period.totalTokens += Math.max(0, Math.round(adjustedTokens));
     period.costUsd += cost;
     period.cacheReadTokens += cacheRead;
     period.cacheWriteTokens += cacheWrite;
