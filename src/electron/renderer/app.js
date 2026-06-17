@@ -1595,14 +1595,20 @@ function render() {
   }
   state.currentTotal = nextTotal;
   els.cost.textContent = formatCost(period.costUsd || 0);
-  // Cache hit rate
-  const cacheRead = period.cacheReadTokens || 0;
-  const outputTokens = period.outputTokens || 0;
-  const inputTokens = nextTotal - outputTokens;
-  if (cacheRead > 0 && inputTokens > 0) {
-    const hitPct = Math.round((cacheRead / inputTokens) * 100);
-    els.cacheRate.textContent = 'Cache hit: ' + hitPct + '%';
+  // Cache hit rate — color from red→yellow→green, with glow at high rates
+  const cacheReadVal = period.cacheReadTokens || 0;
+  const outputTokensVal = period.outputTokens || 0;
+  const inputTokensVal = nextTotal - outputTokensVal;
+  if (cacheReadVal > 0 && inputTokensVal > 0) {
+    const hitPct = Math.round((cacheReadVal / inputTokensVal) * 100);
+    els.cacheRate.textContent = '⚡ Cache hit: ' + hitPct + '%';
     els.cacheRate.classList.remove('hidden');
+    // Green at 100%, yellow at 50%, red at 0%
+    const r = Math.round(255 * (1 - hitPct / 100) * 2);
+    const g = Math.round(255 * (hitPct / 100) * 1.5);
+    const color = hitPct >= 95 ? '#4ade80' : `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, 80)`;
+    els.cacheRate.style.color = color;
+    els.cacheRate.style.textShadow = hitPct >= 95 ? '0 0 8px rgba(74, 222, 128, 0.4)' : 'none';
   } else {
     els.cacheRate.classList.add('hidden');
   }
@@ -4066,7 +4072,7 @@ function renderOpenCodeProfiles() {
     const entries = Object.entries(profiles);
 
     if (entries.length === 0 && !hasEnvVar) {
-      listEl.innerHTML = '<p class="settings-note">尚未配置账号。在下方输入任意名称（如 work、personal）和 cookie 来添加多个 OpenCode 账号。</p>';
+      listEl.innerHTML = '<div class="opencode-empty">尚未添加任何账号。点下方「+ 添加账号」开始。</div>';
       state.opencodeProfileCount = 0;
       return;
     }
@@ -4076,12 +4082,13 @@ function renderOpenCodeProfiles() {
     // 表头
     const header = document.createElement('div');
     header.className = 'opencode-profile-header';
-    header.innerHTML = '<span class="ph-toggle"></span><span class="ph-name">名称</span><span class="ph-status">状态</span><span class="ph-balance">余额</span><span class="ph-action"></span>';
+    header.innerHTML = '<span></span><span>名称</span><span>状态</span><span>余额</span><span></span>';
     listEl.appendChild(header);
 
     for (const [name, profile] of entries) {
       const item = document.createElement('div');
       item.className = 'opencode-profile-item';
+      item.dataset.profileName = name;
 
       // Toggle
       const toggle = document.createElement('input');
@@ -4090,46 +4097,83 @@ function renderOpenCodeProfiles() {
       toggle.checked = profile.enabled;
       toggle.addEventListener('change', () => {
         api.setProfileEnabled(name, toggle.checked).then(() => {
-          statusSpan.textContent = toggle.checked ? '...' : '(已禁用)';
-          if (balanceSpan) balanceSpan.textContent = '';
+          const st = item.querySelector('.profile-status');
+          st.textContent = toggle.checked ? '...' : '已禁用';
+          const bal = item.querySelector('.profile-balance');
+          if (bal) bal.textContent = '';
           renderSettingsSummaries();
         });
       });
 
-      // Name
+      // Name container (clickable, turns into input on click)
+      const nameBox = document.createElement('span');
+      nameBox.className = 'profile-name-box';
+
       const nameSpan = document.createElement('span');
       nameSpan.className = 'profile-name';
       nameSpan.textContent = name;
-      nameSpan.title = '点击重命名';
-      nameSpan.addEventListener('click', () => {
-        const newName = prompt('将 "' + name + '" 重命名为:', name);
-        if (newName && newName.trim() && newName.trim() !== name) {
-          api.renameProfile(name, newName.trim()).then(() => {
+
+      const nameInput = document.createElement('input');
+      nameInput.className = 'profile-name-input hidden';
+      nameInput.type = 'text';
+      nameInput.value = name;
+
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'profile-rename-btn';
+      renameBtn.textContent = '✎';
+      renameBtn.title = '重命名';
+
+      // Click name → edit mode
+      let editing = false;
+      function enterEdit() {
+        if (editing) return;
+        editing = true;
+        nameSpan.classList.add('hidden');
+        nameInput.classList.remove('hidden');
+        nameInput.focus();
+        nameInput.select();
+      }
+      function exitEdit(save) {
+        if (!editing) return;
+        editing = false;
+        nameInput.classList.add('hidden');
+        nameSpan.classList.remove('hidden');
+        if (save && nameInput.value.trim() && nameInput.value.trim() !== name) {
+          api.renameProfile(name, nameInput.value.trim()).then(() => {
             renderOpenCodeProfiles();
             updateOpenCodeProfilesStatus();
             renderSettingsSummaries();
           });
         }
+      }
+      nameSpan.addEventListener('click', enterEdit);
+      renameBtn.addEventListener('click', enterEdit);
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') exitEdit(true);
+        if (e.key === 'Escape') exitEdit(false);
       });
+      nameInput.addEventListener('blur', () => exitEdit(true));
+
+      nameBox.append(nameSpan, nameInput, renameBtn);
 
       // Status
       const statusSpan = document.createElement('span');
       statusSpan.className = 'profile-status';
       statusSpan.id = 'opencode-status-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      statusSpan.textContent = profile.enabled ? '...' : '(已禁用)';
+      statusSpan.textContent = profile.enabled ? '...' : '已禁用';
 
       // Balance
       const balanceSpan = document.createElement('span');
       balanceSpan.className = 'profile-balance';
       balanceSpan.id = 'opencode-balance-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-      // Delete button
+      // Delete
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'profile-delete';
       deleteBtn.textContent = '✕';
-      deleteBtn.title = '删除此账号';
+      deleteBtn.title = '删除';
       deleteBtn.addEventListener('click', async () => {
-        if (confirm('确定删除账号 "' + name + '" 吗？')) {
+        if (confirm('确定删除账号「' + name + '」吗？')) {
           await api.deleteProfile(name);
           renderOpenCodeProfiles();
           updateOpenCodeProfilesStatus();
@@ -4137,7 +4181,7 @@ function renderOpenCodeProfiles() {
         }
       });
 
-      item.append(toggle, nameSpan, statusSpan, balanceSpan, deleteBtn);
+      item.append(toggle, nameBox, statusSpan, balanceSpan, deleteBtn);
       listEl.appendChild(item);
     }
 
@@ -4580,25 +4624,6 @@ function setupCursorAccountUI() {
       }
     });
 
-    document.getElementById('opencodeOpenBrowser').addEventListener('click', () => {
-      window.tokenMonitor.openExternal('https://opencode.ai/auth');
-    });
-
-    document.getElementById('opencodeLogoutButton').addEventListener('click', async () => {
-      if (confirm('Logout from all OpenCode accounts?')) {
-        await window.tokenMonitor.opencode.logout();
-        renderOpenCodeProfiles();
-        updateOpenCodeProfilesStatus();
-        document.getElementById('opencodeCookieStatus').textContent = 'Not configured';
-        renderSettingsSummaries();
-      }
-    });
-
-    document.getElementById('opencodeRefreshButton').addEventListener('click', () => {
-      renderOpenCodeProfiles();
-      updateOpenCodeProfilesStatus();
-    });
-
     document.getElementById('opencodeCookieSubmit').addEventListener('click', async () => {
       const input = document.getElementById('opencodeCookieInput');
       const nameInput = document.getElementById('opencodeProfileName');
@@ -4616,7 +4641,7 @@ function setupCursorAccountUI() {
         updateOpenCodeProfilesStatus();
         renderSettingsSummaries();
       } else {
-        errorEl.textContent = result.error || 'Failed to save profile';
+        errorEl.textContent = result.error || '保存失败';
         errorEl.classList.remove('hidden');
       }
     });

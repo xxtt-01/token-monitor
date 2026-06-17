@@ -2204,83 +2204,150 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 .custom-pricing-edit { cursor: pointer; }
 
 .opencode-profile-list {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+}
+.opencode-empty {
+  padding: 16px 8px;
+  color: var(--text-secondary, #888);
+  font-size: 13px;
+  text-align: center;
 }
 .opencode-profile-header {
   display: grid;
-  grid-template-columns: 24px 1fr 120px 80px 28px;
-  gap: 8px;
-  padding: 4px 8px;
-  margin-bottom: 2px;
+  grid-template-columns: 24px 1fr 100px 80px 28px;
+  gap: 6px;
+  padding: 2px 8px 4px;
   font-size: 11px;
   color: var(--text-secondary, #888);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 4px;
 }
-.opencode-profile-header .ph-toggle { grid-column: 1; }
-.opencode-profile-header .ph-name { grid-column: 2; }
-.opencode-profile-header .ph-status { grid-column: 3; }
-.opencode-profile-header .ph-balance { grid-column: 4; text-align: right; }
-.opencode-profile-header .ph-action { grid-column: 5; }
-
 .opencode-profile-item {
   display: grid;
-  grid-template-columns: 24px 1fr 120px 80px 28px;
-  gap: 8px;
+  grid-template-columns: 24px 1fr 100px 80px 28px;
+  gap: 6px;
   align-items: center;
   padding: 6px 8px;
   border-radius: 6px;
-  background: var(--surface-color, rgba(255,255,255,0.05));
-  margin-bottom: 4px;
+  transition: background 0.15s;
+}
+.opencode-profile-item:hover {
+  background: rgba(255,255,255,0.05);
 }
 .opencode-profile-item .profile-toggle {
-  grid-column: 1;
+  justify-self: center;
+}
+.opencode-profile-item .profile-name-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 .opencode-profile-item .profile-name {
-  grid-column: 2;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding: 2px 4px;
+  border-radius: 3px;
 }
 .opencode-profile-item .profile-name:hover {
-  text-decoration: underline;
+  background: rgba(115, 189, 245, 0.1);
   color: var(--accent-color, #73bdf5);
 }
-.opencode-profile-item .profile-status {
-  grid-column: 3;
-  font-size: 11px;
-  color: var(--text-secondary, #888);
+.opencode-profile-item .profile-name-input {
+  font-size: 13px;
+  padding: 2px 4px;
+  border: 1px solid var(--accent-color, #73bdf5);
+  border-radius: 3px;
+  background: rgba(0,0,0,0.2);
+  color: inherit;
+  width: 100%;
+  outline: none;
 }
-.opencode-profile-item .profile-balance {
-  grid-column: 4;
-  font-size: 11px;
-  color: var(--accent-color, #73bdf5);
-  text-align: right;
-}
-.opencode-profile-item .profile-delete {
-  grid-column: 5;
+.opencode-profile-item .profile-rename-btn {
   flex-shrink: 0;
   background: none;
   border: none;
-  color: var(--danger-color, #e74c3c);
+  color: var(--text-secondary, #888);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   padding: 2px 4px;
-  border-radius: 4px;
-  opacity: 0.6;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.opencode-profile-item:hover .profile-rename-btn {
+  opacity: 1;
+}
+.opencode-profile-item .profile-rename-btn:hover {
+  color: var(--accent-color, #73bdf5);
+  background: rgba(115, 189, 245, 0.1);
+}
+.opencode-profile-item .profile-status {
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.opencode-profile-item .profile-balance {
+  font-size: 12px;
+  color: var(--accent-color, #73bdf5);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.opencode-profile-item .profile-delete {
+  justify-self: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.opencode-profile-item:hover .profile-delete {
+  opacity: 1;
 }
 .opencode-profile-item .profile-delete:hover {
-  opacity: 1;
+  color: var(--danger-color, #e74c3c);
   background: rgba(231, 76, 60, 0.15);
 }
 .opencode-profile-item.env-profile {
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
+/* 添加账号折叠面板 */
+.opencode-add-form {
+  margin-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 8px;
+}
+.opencode-add-summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent-color, #73bdf5);
+  padding: 4px 8px;
+  border-radius: 4px;
+  user-select: none;
+}
+.opencode-add-summary:hover {
+  background: rgba(115, 189, 245, 0.1);
+}
+.opencode-add-body {
+  padding: 8px;
+}
+
+/* 缓存命中率 */
 .cache-rate {
-  font-size: 11px;
-  color: var(--text-secondary, #888);
-  margin-top: 2px;
+  font-size: 12px;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s;
 }
