@@ -11,3 +11,19 @@
   - main.js 添加 `opencodeProfiles` 配置字段和旧 `opencodeCookie` 迁移逻辑
   - 本地 Local（SQLite）作为独立 provider 始终显示
 - **影响范围:** 限额采集流程、UI 显示聚合逻辑、Electron 主进程配置传递
+
+## 2026-06-17 18:50: 多账号 IPC 通道和 preload API 桥接
+- **文件:**
+  - `src/electron/main.js`
+  - `src/electron/preload.js`
+- **原因:** 为多账号管理提供完整的 IPC 通信层
+- **决策:**
+  - defaultSettings 添加 `opencodeProfiles: {}`
+  - readSettings 添加旧 `opencodeCookie` 到 `opencodeProfiles` 自动迁移
+  - `currentOpenCodeCookie()` 优先使用 profiles 中的启用 cookie
+  - 重写 `opencode:saveCookie` 同时写入 `profiles.default` 和 `opencodeCookie`
+  - 重写 `opencode:logout` 同时清空 profiles 和 opencodeCookie
+  - 重写 `opencode:status` 遍历所有 profiles 查询状态，保留 env 环境变量兼容
+  - 新增 5 个 IPC handler: getProfiles/saveProfile/deleteProfile/renameProfile/setProfileEnabled
+  - preload.js 桥接所有新 IPC 方法到 renderer 进程
+- **影响范围:** Electron 主进程 IPC 层、渲染进程 API 桥接

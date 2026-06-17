@@ -2524,6 +2524,64 @@ app.whenReady().then(() => {
     opencodeStatusCache = { value, at: now };
     return value;
   });
+  ipcMain.handle('opencode:getProfiles', async () => {
+    const profiles = settings.opencodeProfiles || {};
+    const hasEnvVar = Boolean(process.env.TOKEN_MONITOR_OPENCODE_COOKIE);
+    return { profiles, hasEnvVar };
+  });
+  ipcMain.handle('opencode:saveProfile', async (_event, name, raw) => {
+    const cookie = opencodeWeb.sanitizeCookieHeader(raw);
+    if (!cookie || !name) return { ok: false, error: 'Empty name or cookie' };
+    try {
+      const [go, zen] = await Promise.all([
+        opencodeWeb.fetchGoWeb(cookie, {}),
+        opencodeWeb.fetchZen(cookie, {})
+      ]);
+      if (opencodeWeb.summarizeLink(go, zen).expired) {
+        return { ok: false, error: 'OpenCode rejected the cookie (it may be expired)' };
+      }
+      const profiles = settings.opencodeProfiles || {};
+      profiles[name] = { cookie, enabled: true };
+      settings.opencodeProfiles = profiles;
+      saveSettings();
+      opencodeStatusCache = { value: null, at: 0 };
+      startMode();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('opencode:deleteProfile', async (_event, name) => {
+    const profiles = settings.opencodeProfiles || {};
+    delete profiles[name];
+    settings.opencodeProfiles = profiles;
+    saveSettings();
+    opencodeStatusCache = { value: null, at: 0 };
+    startMode();
+    return { ok: true };
+  });
+  ipcMain.handle('opencode:renameProfile', async (_event, oldName, newName) => {
+    if (!newName || oldName === newName) return { ok: false, error: 'Invalid name' };
+    const profiles = settings.opencodeProfiles || {};
+    if (!profiles[oldName]) return { ok: false, error: 'Profile not found' };
+    profiles[newName] = profiles[oldName];
+    delete profiles[oldName];
+    settings.opencodeProfiles = profiles;
+    saveSettings();
+    opencodeStatusCache = { value: null, at: 0 };
+    startMode();
+    return { ok: true };
+  });
+  ipcMain.handle('opencode:setProfileEnabled', async (_event, name, enabled) => {
+    const profiles = settings.opencodeProfiles || {};
+    if (!profiles[name]) return { ok: false, error: 'Profile not found' };
+    profiles[name].enabled = Boolean(enabled);
+    settings.opencodeProfiles = profiles;
+    saveSettings();
+    opencodeStatusCache = { value: null, at: 0 };
+    startMode();
+    return { ok: true };
+  });
   ipcMain.handle('codex:accounts', () => codexAccountsForRenderer());
   ipcMain.handle('codex:addAccount', async (event) => {
     if (codexLoginInFlight) return { ok: false, error: 'A Codex sign-in is already in progress.' };
