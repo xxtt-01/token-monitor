@@ -52,3 +52,16 @@
   - 单 cookie 保留原有 Go web > Go local > Zen 的合并行为，确保测试和旧 API 兼容
   - 多 cookie 时每个 profile 独立查询，本地 Local 作为独立 provider
 - **影响范围:** `fetchOpenCodeLimits` 函数逻辑
+
+## 2026-06-17 20:00: 代码清理 — 移除死代码、去重、UI 即时刷新
+- **文件:**
+  - `src/electron/main.js`
+  - `src/electron/renderer/app.js`
+  - `src/shared/limitCollector.js`
+- **原因:** 审查发现的代码质量问题
+- **决策:**
+  - 移除死函数 `readOpenCodeStatus()`（已被 `opencode:status` 内联逻辑替代）
+  - 禁用 Profile 不再被 `opencode:status` 查询，减少 HTTP 请求
+  - 多账号路径复用 `fetchSingleOpenCodeProfile` 去重
+  - Profile 切换/删除后即时调用 `renderSettingsSummaries()` 更新摘要 pill
+- **影响范围:** 代码质量、UI 响应性

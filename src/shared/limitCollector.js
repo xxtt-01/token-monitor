@@ -1847,34 +1847,8 @@ async function fetchOpenCodeLimits(options = {}, deps = {}) {
 
   // Each enabled profile
   for (const { name, cookie } of cookies) {
-    const [goWeb, zen] = await Promise.all([
-      fetchGoWeb(cookie, { now: () => nowMs }),
-      fetchZen(cookie, { now: () => nowMs, workspaceId: '' })
-    ]);
-    const pWindows = [];
-    let pStatus = 'notConfigured';
-    let pBalance = null;
-    if (goWeb && goWeb.status === 'ok' && goWeb.windows.length > 0) {
-      pWindows.push(...goWeb.windows);
-      pStatus = 'ok';
-    }
-    if (zen && zen.status === 'ok') {
-      pWindows.push(...zen.windows);
-      pStatus = 'ok';
-      if (typeof zen.balanceUsd === 'number' && Number.isFinite(zen.balanceUsd)) pBalance = zen.balanceUsd;
-    }
-    if (pStatus !== 'ok') pStatus = goWeb?.status || zen?.status || 'unauthorized';
-
-    providers.push(normalizeLimitProvider({
-      provider: 'opencode',
-      accountKey: hashKey('opencode', name),
-      accountLabel: name,
-      source: 'web',
-      status: pStatus,
-      updatedAt,
-      windows: pWindows,
-      balanceUsd: pBalance
-    }));
+    const provider = await fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, nowMs, updatedAt);
+    if (provider) providers.push(provider);
   }
 
   if (providers.length === 0) {

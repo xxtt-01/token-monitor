@@ -4075,7 +4075,11 @@ function renderOpenCodeProfiles() {
       toggle.className = 'profile-toggle';
       toggle.checked = profile.enabled;
       toggle.addEventListener('change', () => {
-        api.setProfileEnabled(name, toggle.checked);
+        api.setProfileEnabled(name, toggle.checked).then(() => {
+          statusSpan.textContent = toggle.checked ? '...' : '(disabled)';
+          if (balanceSpan) balanceSpan.textContent = '';
+          renderSettingsSummaries();
+        });
       });
 
       // Name (click to rename)
@@ -4089,6 +4093,7 @@ function renderOpenCodeProfiles() {
           api.renameProfile(name, newName.trim()).then(() => {
             renderOpenCodeProfiles();
             updateOpenCodeProfilesStatus();
+            renderSettingsSummaries();
           });
         }
       });
@@ -4114,6 +4119,7 @@ function renderOpenCodeProfiles() {
           await api.deleteProfile(name);
           renderOpenCodeProfiles();
           updateOpenCodeProfilesStatus();
+          renderSettingsSummaries();
         }
       });
 
@@ -4570,6 +4576,7 @@ function setupCursorAccountUI() {
         renderOpenCodeProfiles();
         updateOpenCodeProfilesStatus();
         document.getElementById('opencodeCookieStatus').textContent = 'Not configured';
+        renderSettingsSummaries();
       }
     });
 
@@ -4593,6 +4600,7 @@ function setupCursorAccountUI() {
         nameInput.value = '';
         renderOpenCodeProfiles();
         updateOpenCodeProfilesStatus();
+        renderSettingsSummaries();
       } else {
         errorEl.textContent = result.error || 'Failed to save profile';
         errorEl.classList.remove('hidden');

@@ -2041,6 +2041,9 @@ let cursorStatusCache = { value: null, at: 0 };
 let opencodeStatusCache = { value: null, at: 0 };
 const CURSOR_STATUS_TTL_MS = 30 * 1000;
 
+// Used by collectors to get the cookie for limit collection.
+// Collector options already pass opencodeProfiles directly;
+// this fallback is for any remaining single-cookie path.
 function currentOpenCodeCookie() {
   // 优先使用 profiles 中的第一个启用 cookie
   const profiles = settings?.opencodeProfiles || {};
@@ -2049,19 +2052,6 @@ function currentOpenCodeCookie() {
   return settings?.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '';
 }
 
-async function readOpenCodeStatus() {
-  const cookie = currentOpenCodeCookie();
-  if (!cookie) return { linked: false };
-  // Probe both sources so a Go-only cookie isn't judged solely by Zen (and vice
-  // versa). Both fetchers swallow their own errors, so Promise.all won't reject.
-  const [go, zen] = await Promise.all([
-    opencodeWeb.fetchGoWeb(cookie, {}),
-    opencodeWeb.fetchZen(cookie, {})
-  ]);
-  const summary = opencodeWeb.summarizeLink(go, zen);
-  if (summary.expired) return { ...summary, error: 'OpenCode cookie expired' };
-  return summary;
-}
 
 function normalizeManualCookie(input) {
   let s = String(input || '').trim();
@@ -2504,7 +2494,7 @@ app.whenReady().then(() => {
     const profiles = settings.opencodeProfiles || {};
     const result = {};
     for (const [name, profile] of Object.entries(profiles)) {
-      if (!profile.cookie) continue;
+      if (!profile.cookie || !profile.enabled) continue;
       const [go, zen] = await Promise.all([
         opencodeWeb.fetchGoWeb(profile.cookie, {}),
         opencodeWeb.fetchZen(profile.cookie, {})
