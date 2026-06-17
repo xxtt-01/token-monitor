@@ -4102,51 +4102,13 @@ function renderOpenCodeProfiles() {
         });
       });
 
-      // Name container
+      // Name — 点击通过 IPC 对话框重命名
       const nameBox = document.createElement('span');
       nameBox.className = 'profile-name-box';
       const nameSpan = document.createElement('span');
       nameSpan.className = 'profile-name';
       nameSpan.textContent = name;
-      const nameInput = document.createElement('input');
-      nameInput.className = 'profile-name-input hidden';
-      nameInput.type = 'text';
-      nameInput.value = name;
-      const renameBtn = document.createElement('button');
-      renameBtn.className = 'profile-rename-btn';
-      renameBtn.textContent = '✎';
-      renameBtn.title = '重命名';
-
-      let editing = false;
-      function enterEdit() {
-        if (editing) return;
-        editing = true;
-        nameSpan.classList.add('hidden');
-        nameInput.classList.remove('hidden');
-        nameInput.focus();
-        nameInput.select();
-      }
-      function exitEdit(save) {
-        if (!editing) return;
-        editing = false;
-        nameInput.classList.add('hidden');
-        nameSpan.classList.remove('hidden');
-        if (save && nameInput.value.trim() && nameInput.value.trim() !== name) {
-          api.renameProfile(name, nameInput.value.trim()).then(() => {
-            renderOpenCodeProfiles();
-            updateOpenCodeProfilesStatus();
-            renderSettingsSummaries();
-          });
-        }
-      }
-      nameSpan.addEventListener('click', enterEdit);
-      renameBtn.addEventListener('click', enterEdit);
-      nameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') exitEdit(true);
-        if (e.key === 'Escape') exitEdit(false);
-      });
-      nameInput.addEventListener('blur', () => exitEdit(true));
-      nameBox.append(nameSpan, nameInput, renameBtn);
+      nameBox.append(nameSpan);
 
       // Info: status + balance combined
       const infoSpan = document.createElement('span');

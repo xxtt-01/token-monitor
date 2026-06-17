@@ -366,7 +366,7 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   accent-color: var(--green);
 }
 .settings-group { display: grid; min-width: 0; gap: 8px; }
-.settings-group.hidden, .settings-subgroup.hidden, .settings-actions button.hidden { display: none; }
+.hidden, .settings-group.hidden, .settings-subgroup.hidden, .settings-actions button.hidden { display: none !important; }
 .settings-group-header { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; }
 .settings-group-header span:last-child:not(:first-child) { font-size: 9px; opacity: 0.72; }
 .settings-collapsible-group {
@@ -2249,45 +2249,11 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 }
 .opencode-profile-item .profile-name {
   font-size: 13px;
-  cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 2px 4px;
   border-radius: 3px;
-}
-.opencode-profile-item .profile-name:hover {
-  background: rgba(115, 189, 245, 0.1);
-  color: var(--accent-color, #73bdf5);
-}
-.opencode-profile-item .profile-name-input {
-  font-size: 13px;
-  padding: 2px 4px;
-  border: 1px solid var(--accent-color, #73bdf5);
-  border-radius: 3px;
-  background: rgba(0,0,0,0.2);
-  color: inherit;
-  min-width: 60px;
-  outline: none;
-}
-.opencode-profile-item .profile-rename-btn {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: var(--text-secondary, #888);
-  cursor: pointer;
-  font-size: 13px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.opencode-profile-item:hover .profile-rename-btn {
-  opacity: 1;
-}
-.opencode-profile-item .profile-rename-btn:hover {
-  color: var(--accent-color, #73bdf5);
-  background: rgba(115, 189, 245, 0.1);
 }
 .opencode-profile-item .profile-info {
   font-size: 12px;
