@@ -137,3 +137,16 @@
 - **根因:** loop() 中 runTick 未传递 todayOnly 参数，anchored 始终为 false
 - **决策:** loop() 中检测 anchor 有效性，有有效锚点时传 todayOnly: true
 - **影响范围:** 后续启动速度（90s → 30s，与预期一致）
+
+## 2026-06-18 04:30: 目录时间戳缓存 — 文件未变时完全跳过 tokscale
+- **文件:**
+  - `src/shared/collector.js`
+- **原因:** 即使锚点有效，每次启动仍需跑一次 `--today` 扫描（~30s），因为 78k+ 消息的扫描无法跳过
+- **决策:**
+  - 新增 `collectDirTimestamps()` 收集所有客户端数据目录的 mtime
+  - 新增 `timestampsEqual()` 比较时间戳是否变化
+  - 全量扫描后将目录时间戳存入 `collector-dirts.json`
+  - 启动时对比当前时间戳与缓存，无变化则直接复用锚点数据（跳过 tokscale）
+  - 同步跳过 `maybeSyncCursor`/`maybeSyncAntigravity`（避免写入缓存文件导致下次失效）
+  - 锚点路径也增加了 `onProgress` 回调，加载中有反馈
+- **影响范围:** 启动速度（无文件变化时 30s → 0s，对话中首次扫描后重启立即可见数据）

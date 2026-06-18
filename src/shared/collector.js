@@ -360,30 +360,37 @@ async function collectUsageOnce(options) {
   let month = emptyPeriod();
   let allTime = emptyPeriod();
   if (normalizedClients) {
-    await maybeSyncCursor(normalizedClients, options.logger);
-    await maybeSyncAntigravity(normalizedClients, options.logger, options.homeDir || os.homedir());
     const anchor = options.todayOnlyAnchor;
-    if (anchor && anchor.dateKey === localTodayKey()) {
-      // Anchored tick (watch-triggered): every tokscale period scan costs the
-      // same full load + filter, so scan only --today and update the broader
-      // windows exactly via applyPeriodDelta — one spawn instead of three.
-      const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
-      today = extractUsageFromTokscale(todayJson);
-      month = applyPeriodDelta(anchor.month, today, anchor.today);
-      allTime = applyPeriodDelta(anchor.allTime, today, anchor.today);
+    if (options.skipTokenscan) {
+      // No directories changed since last full scan — reuse cached periods directly.
+      // Skips sync, tokscale, and applySessionTimestamps (already embedded in anchor).
+      today = anchor.today;
+      month = anchor.month;
+      allTime = anchor.allTime;
     } else {
-      // Serial on purpose: concurrent scans triple the peak CPU/IO load, which
-      // is what let the issue #15 self-trigger loop spike tokscale past 500% CPU.
-      const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
-      const monthJson = await runTokscale({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
-      const allTimeJson = await runTokscale({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
-      today = extractUsageFromTokscale(todayJson);
-      options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
-      month = extractUsageFromTokscale(monthJson);
-      options.onProgress?.({ today, month, allTime: null, updatedAt: new Date().toISOString() });
-      allTime = extractUsageFromTokscale(allTimeJson);
+      await maybeSyncCursor(normalizedClients, options.logger);
+      await maybeSyncAntigravity(normalizedClients, options.logger, options.homeDir || os.homedir());
+      if (anchor && anchor.dateKey === localTodayKey()) {
+        // Anchored tick: scan only --today, derive month/allTime via applyPeriodDelta.
+        const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
+        today = extractUsageFromTokscale(todayJson);
+        options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
+        month = applyPeriodDelta(anchor.month, today, anchor.today);
+        allTime = applyPeriodDelta(anchor.allTime, today, anchor.today);
+      } else {
+        // Serial on purpose: concurrent scans triple the peak CPU/IO load, which
+        // is what let the issue #15 self-trigger loop spike tokscale past 500% CPU.
+        const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
+        const monthJson = await runTokscale({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
+        const allTimeJson = await runTokscale({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
+        today = extractUsageFromTokscale(todayJson);
+        options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
+        month = extractUsageFromTokscale(monthJson);
+        options.onProgress?.({ today, month, allTime: null, updatedAt: new Date().toISOString() });
+        allTime = extractUsageFromTokscale(allTimeJson);
+      }
+      applySessionTimestamps({ today, month, allTime }, options.homeDir || os.homedir());
     }
-    applySessionTimestamps({ today, month, allTime }, options.homeDir || os.homedir());
   }
   const summary = {
     deviceId,
@@ -474,6 +481,26 @@ function clientDataDirPresence(clientsCsv) {
   return presence;
 }
 
+// Collect mtime of each client data directory for tokscale cache invalidation.
+function collectDirTimestamps(clientsCsv) {
+  const candidates = clientWatchCandidates(clientsCsv);
+  const ts = {};
+  for (const dirs of Object.values(candidates)) {
+    for (const dir of dirs) {
+      try { ts[dir] = fs.statSync(dir).mtimeMs; } catch (_) {}
+    }
+  }
+  return ts;
+}
+
+function timestampsEqual(a, b) {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  for (const key of keys) {
+    if (a?.[key] !== b?.[key]) return false;
+  }
+  return true;
+}
+
 // Pure detection-status derivation, given the two existing signals per client:
 // `active`  — tokscale read all-time usage for it,
 // `waiting` — its data directory exists but no usage was found,
@@ -517,6 +544,12 @@ function startCollector(options) {
       anchor = saved;
     }
   } catch (_) {}
+  // 目录时间戳缓存：文件未变时完全跳过 tokscale 扫描
+  const dirTimestampsPath = path.join(sharedDataDir(), 'collector-dirts.json');
+  let savedDirTimestamps = null;
+  try {
+    savedDirTimestamps = readJson(dirTimestampsPath, null);
+  } catch (_) {}
   let pendingWaiters = [];
   let debounceTimer = null;
   let intervalTimer = null;
@@ -534,6 +567,7 @@ function startCollector(options) {
     if (includeHistory) lastHistoryAt = Date.now();
     const todayKey = localTodayKey();
     const anchored = Boolean(tickOptions.todayOnly && anchor && anchor.dateKey === todayKey);
+    const dirsMatch = anchored && savedDirTimestamps && timestampsEqual(collectDirTimestamps(clients), savedDirTimestamps);
     try {
       const summary = await collectUsageOnce({
         ...options,
@@ -547,6 +581,7 @@ function startCollector(options) {
         includeHistory,
         forceLimits: Boolean(tickOptions.forceLimits),
         todayOnlyAnchor: anchored ? anchor : null,
+        skipTokenscan: dirsMatch,
         onProgress: (partial) => {
           if (!partial.today) return;
           onUpdate?.({
@@ -569,6 +604,8 @@ function startCollector(options) {
         try {
           fs.mkdirSync(path.dirname(anchorPath), { recursive: true });
           fs.writeFileSync(anchorPath, JSON.stringify(anchor));
+          savedDirTimestamps = collectDirTimestamps(clients);
+          fs.writeFileSync(dirTimestampsPath, JSON.stringify(savedDirTimestamps));
         } catch (_) {}
       }
       await onUpdate?.(summary, reason);
