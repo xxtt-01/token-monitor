@@ -932,6 +932,26 @@ function startEdgeDock() {
     } else {
       stopEdgeDockMonitor();
     }
+    return;
+  }
+  // 启动时检测：如果窗口处于贴边位置（仅 5px 可见），重新吸附以启动监测器
+  if (!edgeDockState.docked && mainWindow && !mainWindow.isDestroyed()) {
+    const side = edgeDockNearEdge();
+    if (side) {
+      const bounds = mainWindow.getBounds();
+      const display = edgeDockDisplay();
+      if (display) {
+        const wa = display.workArea;
+        const barelyVisible = side === 'left'
+          ? (bounds.x + bounds.width - wa.x) <= EDGE_DOCK_STRIP_PX + 3
+          : side === 'right'
+            ? (wa.x + wa.width - bounds.x) <= EDGE_DOCK_STRIP_PX + 3
+            : (bounds.y + bounds.height - wa.y) <= EDGE_DOCK_STRIP_PX + 3;
+        if (barelyVisible) {
+          edgeDockDo(side);
+        }
+      }
+    }
   }
 }
 
