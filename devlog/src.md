@@ -113,3 +113,19 @@
 - **原因:** `renderLimits` 中多账号时只取了 `visibleProviders[0]`，后面的 opencode 账号被静默丢弃
 - **决策:** 新增 `renderOpenCodeAccountGroup`，参照 Codex 多账号模式展开显示所有 profile 的日/周/月额度
 - **影响范围:** 额度面板 OpenCode 多账号显示
+
+## 2026-06-18 03:30: 状态栏可见 + 渐进式展示 + 锚点持久化
+- **文件:**
+  - `src/electron/renderer/styles.css`
+  - `src/electron/renderer/app.js`
+  - `src/shared/collector.js`
+- **原因:**
+  - 状态栏 .status 默认 display:none，用户看不到加载进度
+  - 首次启动要等 90s today+month+allTime 扫完才能看到数据
+  - 后续启动同样要等 90s，month/allTime 数据其实没变化
+- **决策:**
+  - 状态栏改为可见，加载时蓝色脉冲文字
+  - 渐进式展示：today 扫完立刻推数据，不等 month/allTime
+  - 锚点持久化：全量扫描结果存磁盘，后续启动直接复用
+  - 锚点过期检测：仅当 dateKey 当天有效
+- **影响范围:** 启动速度（首 90s→30s 见数据，后续 90s→30s）

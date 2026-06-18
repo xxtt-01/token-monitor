@@ -509,6 +509,14 @@ function startCollector(options) {
   // Last full-scan snapshot; lets watch ticks scan only --today and derive
   // month/allTime exactly (applyPeriodDelta). Reset by every full tick.
   let anchor = null;
+  // 锚点持久化：磁盘上的上次全量扫描结果，用于后续启动时跳过 month/allTime 扫描
+  const anchorPath = path.join(sharedDataDir(), 'collector-anchor.json');
+  try {
+    const saved = readJson(anchorPath, null);
+    if (saved && saved.dateKey && saved.today && saved.month && saved.allTime) {
+      anchor = saved;
+    }
+  } catch (_) {}
   let pendingWaiters = [];
   let debounceTimer = null;
   let intervalTimer = null;
@@ -556,7 +564,13 @@ function startCollector(options) {
         }
       });
       if (stopped) return;
-      if (!anchored) anchor = { dateKey: todayKey, today: summary.today, month: summary.month, allTime: summary.allTime };
+      if (!anchored) {
+        anchor = { dateKey: todayKey, today: summary.today, month: summary.month, allTime: summary.allTime };
+        try {
+          fs.mkdirSync(path.dirname(anchorPath), { recursive: true });
+          fs.writeFileSync(anchorPath, JSON.stringify(anchor));
+        } catch (_) {}
+      }
       await onUpdate?.(summary, reason);
     } catch (error) {
       if (stopped) return;
