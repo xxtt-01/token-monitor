@@ -641,7 +641,8 @@ function startCollector(options) {
 
   function loop() {
     if (stopped) return;
-    runTick('interval').finally(() => {
+    const anchorToday = anchor && anchor.dateKey === localTodayKey();
+    runTick('interval', anchorToday ? { todayOnly: true } : {}).finally(() => {
       if (stopped) return;
       intervalTimer = setTimeout(loop, intervalMs);
     });
