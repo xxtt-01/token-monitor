@@ -467,13 +467,14 @@ const EDGE_DOCK_ANIM_STEP_MS = 8;   // 每步间隔
 const edgeDockState = {
   enabled: false,
   docked: false,
-  side: null,        // 'left' | 'right'
+  side: null,        // 'left' | 'right' | 'top'
   expandedBounds: null,
   dockedBounds: null,
   monitorTimer: null,
   hideTimer: null,
   animating: false,
-  dockTargetX: null
+  dockTargetX: null,
+  dockTargetY: null
 };
 let edgeDockSuppressCheck = false; // 防止 setBounds 触发 moved 事件导致的循环
 let mainWindowChrome = { collapsedFloatingBubble: false };
@@ -771,8 +772,10 @@ function edgeDockNearEdge() {
   const bounds = mainWindow.getBounds();
   const distLeft = Math.abs(bounds.x - wa.x);
   const distRight = Math.abs((bounds.x + bounds.width) - (wa.x + wa.width));
+  const distTop = Math.abs(bounds.y - wa.y);
   if (distLeft < EDGE_DOCK_TRIGGER_ZONE) return 'left';
   if (distRight < EDGE_DOCK_TRIGGER_ZONE) return 'right';
+  if (distTop < EDGE_DOCK_TRIGGER_ZONE) return 'top';
   return null;
 }
 
@@ -786,14 +789,17 @@ function edgeDockDo(side) {
   let dockedBounds;
   if (side === 'left') {
     dockedBounds = { x: wa.x - bounds.width + EDGE_DOCK_STRIP_PX, y: bounds.y, width: bounds.width, height: bounds.height };
-  } else {
+  } else if (side === 'right') {
     dockedBounds = { x: wa.x + wa.width - EDGE_DOCK_STRIP_PX, y: bounds.y, width: bounds.width, height: bounds.height };
+  } else { // top
+    dockedBounds = { x: bounds.x, y: wa.y - bounds.height + EDGE_DOCK_STRIP_PX, width: bounds.width, height: bounds.height };
   }
   edgeDockState.docked = true;
   edgeDockState.side = side;
   edgeDockState.expandedBounds = expanded;
   edgeDockState.dockedBounds = dockedBounds;
   edgeDockState.dockTargetX = dockedBounds.x;
+  edgeDockState.dockTargetY = dockedBounds.y;
   edgeDockSuppressCheck = true;
   mainWindow.setBounds(dockedBounds);
   setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
@@ -819,25 +825,31 @@ function edgeDockExpand() {
   if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked || edgeDockState.animating) return;
   const target = edgeDockState.expandedBounds;
   if (!target) return;
-  edgeDockSlideTo(target.x);
+  const isHorizontal = edgeDockState.side === 'left' || edgeDockState.side === 'right';
+  edgeDockSlideTo(isHorizontal ? target.x : target.y, isHorizontal);
 }
 
-function edgeDockSlideTo(targetX) {
+function edgeDockSlideTo(targetPos, horizontal = true) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const bounds = mainWindow.getBounds();
-  if (edgeDockState.dockTargetX === targetX) return;
+  const currentKey = horizontal ? 'dockTargetX' : 'dockTargetY';
+  if (edgeDockState[currentKey] === targetPos) return;
   edgeDockState.animating = true;
-  edgeDockState.dockTargetX = targetX;
+  edgeDockState[currentKey] = targetPos;
   edgeDockSuppressCheck = true;
-  const startX = bounds.x;
-  const dx = (targetX - startX) / EDGE_DOCK_ANIM_STEPS;
+  const startPos = horizontal ? bounds.x : bounds.y;
+  const dp = (targetPos - startPos) / EDGE_DOCK_ANIM_STEPS;
   let step = 0;
   const timer = setInterval(() => {
     step++;
     if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(timer); return; }
     const current = mainWindow.getBounds();
-    current.x = Math.round(startX + dx * step);
-    if (step >= EDGE_DOCK_ANIM_STEPS) current.x = targetX;
+    const nextPos = Math.round(startPos + dp * step);
+    if (step >= EDGE_DOCK_ANIM_STEPS) {
+      if (horizontal) current.x = targetPos; else current.y = targetPos;
+    } else {
+      if (horizontal) current.x = nextPos; else current.y = nextPos;
+    }
     mainWindow.setBounds(current);
     if (step >= EDGE_DOCK_ANIM_STEPS) {
       clearInterval(timer);
@@ -851,7 +863,8 @@ function edgeDockCollapse() {
   if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked || edgeDockState.animating) return;
   const target = edgeDockState.dockedBounds;
   if (!target) return;
-  edgeDockSlideTo(target.x);
+  const isHorizontal = edgeDockState.side === 'left' || edgeDockState.side === 'right';
+  edgeDockSlideTo(isHorizontal ? target.x : target.y, isHorizontal);
 }
 
 function startEdgeDockMonitor() {
@@ -869,15 +882,21 @@ function startEdgeDockMonitor() {
         nearEdge = pt.x >= wa.x && pt.x <= wa.x + EDGE_DOCK_HOVER_ZONE && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
       } else if (edgeDockState.side === 'right') {
         nearEdge = pt.x >= wa.x + wa.width - EDGE_DOCK_HOVER_ZONE && pt.x <= wa.x + wa.width && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
+      } else if (edgeDockState.side === 'top') {
+        nearEdge = pt.y >= wa.y && pt.y <= wa.y + EDGE_DOCK_HOVER_ZONE && pt.x >= bounds.x && pt.x <= bounds.x + bounds.width;
       }
       if (nearEdge) {
         if (edgeDockState.hideTimer) { clearTimeout(edgeDockState.hideTimer); edgeDockState.hideTimer = null; }
-        const isDocked = edgeDockState.docked && !edgeDockState.animating && bounds.x === edgeDockState.dockedBounds?.x;
-        if (isDocked) edgeDockExpand();
+        const atDock = edgeDockState.docked && !edgeDockState.animating;
+        if (atDock && (edgeDockState.side === 'top'
+          ? bounds.y === edgeDockState.dockedBounds?.y
+          : bounds.x === edgeDockState.dockedBounds?.x)) edgeDockExpand();
       } else {
-        const isExpanded = edgeDockState.docked && !edgeDockState.animating && !edgeDockState.hideTimer &&
-          Math.abs(bounds.x - edgeDockState.expandedBounds?.x) < 5;
-        if (isExpanded) {
+        const atExpand = edgeDockState.docked && !edgeDockState.animating && !edgeDockState.hideTimer;
+        const nearExpand = edgeDockState.side === 'top'
+          ? Math.abs(bounds.y - edgeDockState.expandedBounds?.y) < 5
+          : Math.abs(bounds.x - edgeDockState.expandedBounds?.x) < 5;
+        if (atExpand && nearExpand) {
           edgeDockState.hideTimer = setTimeout(() => {
             edgeDockState.hideTimer = null;
             edgeDockCollapse();
