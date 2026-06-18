@@ -367,6 +367,9 @@ async function collectUsageOnce(options) {
       today = anchor.today;
       month = anchor.month;
       allTime = anchor.allTime;
+      // Push cached data immediately so the renderer shows something while
+      // history and limits are still being collected.
+      options.onProgress?.({ today, month, allTime, updatedAt: new Date().toISOString() });
     } else {
       await maybeSyncCursor(normalizedClients, options.logger);
       await maybeSyncAntigravity(normalizedClients, options.logger, options.homeDir || os.homedir());

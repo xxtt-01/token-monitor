@@ -7,6 +7,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+// Isolate from any real anchor/timestamp files on the host machine.
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'collector-today-delta-'));
+process.env.TOKEN_MONITOR_SHARED_DIR = tmpDir;
 
 const collectorPath = require.resolve('../../src/shared/collector');
 
@@ -107,34 +114,45 @@ test('startCollector: watch ticks reuse the full-scan anchor, manual ticks resca
   try {
     const { startCollector } = freshCollector();
     const updates = [];
+    const fullUpdates = [];
     const handle = startCollector({
       ...baseOptions,
       intervalMs: 60 * 60 * 1000,
       watchEnabled: false,
       watchDebounceMs: 10,
       historyEnabled: false,
-      onUpdate: (summary, reason) => updates.push({ summary, reason })
+      onUpdate: (summary, reason) => {
+        updates.push({ summary, reason });
+        if (reason !== 'progress') fullUpdates.push({ summary, reason });
+      }
     });
 
-    await waitForUpdates(updates, 1);
+    await waitForUpdates(fullUpdates, 1);
+    const initialSummary = fullUpdates[0].summary;
     const fullScans = calls.length;
     assert.equal(fullScans, 3);
 
     await handle.tick('watch:change:file.jsonl', { todayOnly: true });
-    await waitForUpdates(updates, 2);
-    assert.equal(calls.length, fullScans + 1);
+    await waitForUpdates(fullUpdates, 2);
+    // Files unchanged since full scan — dir timestamps match, skip tokscale entirely
+    assert.equal(calls.length, fullScans);
     // Same fake data both rounds: delta is zero, broader periods match the anchor.
-    assert.equal(updates[1].summary.month.totalTokens, updates[0].summary.month.totalTokens);
-    assert.equal(updates[1].summary.allTime.totalTokens, updates[0].summary.allTime.totalTokens);
-    assert.equal(updates[1].summary.today.totalTokens, 50);
+    assert.equal(fullUpdates[1].summary.month.totalTokens, initialSummary.month.totalTokens);
+    assert.equal(fullUpdates[1].summary.allTime.totalTokens, initialSummary.allTime.totalTokens);
+    assert.equal(fullUpdates[1].summary.today.totalTokens, 50);
 
     await handle.tick('manual');
-    await waitForUpdates(updates, 3);
-    assert.equal(calls.length, fullScans + 1 + 3);
+    await waitForUpdates(fullUpdates, 3);
+    assert.equal(calls.length, fullScans + 3);
 
     handle.stop();
   } finally {
     childProcess.spawn = originalSpawn;
     delete require.cache[collectorPath];
   }
+});
+
+test.after(() => {
+  delete process.env.TOKEN_MONITOR_SHARED_DIR;
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
 });

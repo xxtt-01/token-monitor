@@ -150,3 +150,11 @@
   - 同步跳过 `maybeSyncCursor`/`maybeSyncAntigravity`（避免写入缓存文件导致下次失效）
   - 锚点路径也增加了 `onProgress` 回调，加载中有反馈
 - **影响范围:** 启动速度（无文件变化时 30s → 0s，对话中首次扫描后重启立即可见数据）
+
+## 2026-06-18 11:30: 修复 skipTokenscan 路径缺少 onProgress 导致用户看不到数据
+- **文件:**
+  - `src/shared/collector.js`
+- **原因:** 目录时间戳缓存命中时，skipTokenscan 路径直接从锚点取数据，但没有触发 onProgress，用户要等 history/limits 都收集完才能看到数据（额外 30s+）
+- **根因:** skipTokenscan 路径只设了 today/month/allTime 变量就结束了，onProgress 只存在于 tokscale 扫描路径
+- **决策:** skipTokenscan 拿到锚点数据后立即触发 onProgress，与全量扫描/锚点扫描路径行为一致
+- **影响范围:** 缓存命中时的启动体验（数据即时可见）
