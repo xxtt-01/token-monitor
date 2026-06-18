@@ -378,7 +378,9 @@ async function collectUsageOnce(options) {
       const monthJson = await runTokscale({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
       const allTimeJson = await runTokscale({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
       today = extractUsageFromTokscale(todayJson);
+      options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
       month = extractUsageFromTokscale(monthJson);
+      options.onProgress?.({ today, month, allTime: null, updatedAt: new Date().toISOString() });
       allTime = extractUsageFromTokscale(allTimeJson);
     }
     applySessionTimestamps({ today, month, allTime }, options.homeDir || os.homedir());
@@ -536,7 +538,22 @@ function startCollector(options) {
         limitsCollector,
         includeHistory,
         forceLimits: Boolean(tickOptions.forceLimits),
-        todayOnlyAnchor: anchored ? anchor : null
+        todayOnlyAnchor: anchored ? anchor : null,
+        onProgress: (partial) => {
+          if (!partial.today) return;
+          onUpdate?.({
+            deviceId, hostname: os.hostname(),
+            platform: `${process.platform}-${process.arch}`,
+            updatedAt: partial.updatedAt,
+            agentVersion, agentRuntime,
+            trackedClients: (clients || '').split(',').filter(Boolean),
+            clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
+            today: partial.today,
+            month: partial.month || emptyPeriod(),
+            allTime: partial.allTime || emptyPeriod(),
+            history: null, limits: null
+          }, 'progress');
+        }
       });
       if (stopped) return;
       if (!anchored) anchor = { dateKey: todayKey, today: summary.today, month: summary.month, allTime: summary.allTime };
