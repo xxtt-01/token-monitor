@@ -473,28 +473,29 @@ function extractUsageFromTokscale(json, goPlanFormula) {
            + (cacheRead / 1_000_000) * p.cacheRead;
     }
     const adjustedTokens = cacheRead > 0 && inputTokens > 0 ? inputTokens + output : tokens;
-    period.totalTokens += Math.max(0, Math.round(adjustedTokens));
+    const adjusted = Math.max(0, Math.round(adjustedTokens));
+    period.totalTokens += adjusted;
     period.costUsd += cost;
     period.cacheReadTokens += cacheRead;
     period.cacheWriteTokens += cacheWrite;
     period.outputTokens += output;
-    if (client && tokens > 0) {
-      period.clients[client] = (period.clients[client] || 0) + Math.round(tokens);
+    if (client && adjusted > 0) {
+      period.clients[client] = (period.clients[client] || 0) + adjusted;
       if (cacheRead > 0) period.clientCacheReads[client] = (period.clientCacheReads[client] || 0) + cacheRead;
       if (cacheWrite > 0) period.clientCacheWrites[client] = (period.clientCacheWrites[client] || 0) + cacheWrite;
       if (output > 0) period.clientOutputs[client] = (period.clientOutputs[client] || 0) + output;
     }
     if (client && cost > 0) period.clientCosts[client] = (period.clientCosts[client] || 0) + cost;
-    if (model && tokens > 0) {
-      period.models[model] = (period.models[model] || 0) + Math.round(tokens);
+    if (model && adjusted > 0) {
+      period.models[model] = (period.models[model] || 0) + adjusted;
       if (cacheRead > 0) period.modelCacheReads[model] = (period.modelCacheReads[model] || 0) + cacheRead;
       if (cacheWrite > 0) period.modelCacheWrites[model] = (period.modelCacheWrites[model] || 0) + cacheWrite;
       if (output > 0) period.modelOutputs[model] = (period.modelOutputs[model] || 0) + output;
     }
     if (model && cost > 0) period.modelCosts[model] = (period.modelCosts[model] || 0) + cost;
-    if (client && model && tokens > 0) {
+    if (client && model && adjusted > 0) {
       if (!period.clientModels[client]) period.clientModels[client] = {};
-      period.clientModels[client][model] = (period.clientModels[client][model] || 0) + Math.round(tokens);
+      period.clientModels[client][model] = (period.clientModels[client][model] || 0) + adjusted;
     }
     if (client && model && cost > 0) {
       if (!period.clientModelCosts[client]) period.clientModelCosts[client] = {};

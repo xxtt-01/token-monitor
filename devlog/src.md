@@ -189,3 +189,16 @@
 - **根因:** 设置变更检测列表中没有 `goPlanFormula`
 - **决策:** settings:update handler 中新增 `previousGoPlanFormula` 追踪，检测到变化时自动调用 `startMode()` 重启 collector
 - **影响范围:** Go 套餐开关即时生效（无需重启应用）
+
+## 2026-06-18 14:00: 修复客户端/模型 token 重复计数 cacheRead + OpenCode 额度显示改为已用百分比
+- **文件:**
+  - `src/shared/usage.js`
+  - `src/electron/renderer/app.js`
+- **原因:**
+  - 工具维度下 totalTokens=5.7亿 但 claude=11.4亿，因为 `tokenValue(row)` 对 cacheRead 重复计数（input 已含 cacheRead），而 `totalTokens` 已用 `input+output` 修正了
+  - OpenCode 额度显示"还剩 XX%"，用户希望看"已用 XX%"
+- **根因:** `period.clients`/`period.models` 仍用 `tokenValue(row)`（含重复 cacheRead），未同步使用修正后的 `adjustedTokens`
+- **决策:**
+  - 客户端/模型拆分改用 `adjustedTokens`（与 `totalTokens` 一致），消除 2x 重复
+  - `limitWindowNode` 增加 `showRemaining` 参数（默认 true），OpenCode 窗口传 false 显示已用百分比和对应进度条
+- **影响范围:** 工具维度 token 数据一致性、OpenCode 额度显示方式

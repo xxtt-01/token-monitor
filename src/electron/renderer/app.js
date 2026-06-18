@@ -925,8 +925,8 @@ function formatMoney(value, currency) {
   return `${symbol}${number.toFixed(2)}`;
 }
 
-function formatLimitWindowValue(window, fillPercent, hasPercent) {
-  if (hasPercent) return `${formatPercent(fillPercent)} left`;
+function formatLimitWindowValue(window, fillPercent, hasPercent, showRemaining = true) {
+  if (hasPercent) return showRemaining ? `${formatPercent(fillPercent)} left` : `${formatPercent(fillPercent)} used`;
   if (!window) return '--';
   const remaining = Number(window?.remaining);
   if (Number.isFinite(remaining)) {
@@ -945,16 +945,14 @@ function balanceRemainingWindow(balance) {
   return { remainingPercent };
 }
 
-function limitWindowNode(label, window, color, tone = 1, valueOverride = null) {
+function limitWindowNode(label, window, color, tone = 1, valueOverride = null, showRemaining = true) {
   const remaining = Number(window?.remainingPercent);
   const used = Number(window?.usedPercent);
   const showMeter = window?.showMeter !== false;
   const hasPercent = showMeter && (Number.isFinite(remaining) || Number.isFinite(used));
-  const fillPercent = Number.isFinite(remaining)
-    ? remaining
-    : Number.isFinite(used)
-      ? 100 - used
-      : 0;
+  const fillPercent = showRemaining
+    ? (Number.isFinite(remaining) ? remaining : Number.isFinite(used) ? 100 - used : 0)
+    : (Number.isFinite(used) ? used : Number.isFinite(remaining) ? 100 - remaining : 0);
   const safePercent = Math.max(0, Math.min(100, fillPercent));
   const item = document.createElement('div');
   item.className = 'limit-window';
@@ -963,7 +961,7 @@ function limitWindowNode(label, window, color, tone = 1, valueOverride = null) {
   const name = document.createElement('span');
   name.textContent = window?.label || label;
   const value = document.createElement('span');
-  value.textContent = valueOverride != null ? valueOverride : formatLimitWindowValue(window, fillPercent, hasPercent);
+  value.textContent = valueOverride != null ? valueOverride : formatLimitWindowValue(window, fillPercent, hasPercent, showRemaining);
   text.append(name, value);
   const meter = document.createElement('div');
   meter.className = 'limit-meter';
@@ -1086,11 +1084,11 @@ function renderProviderWindows(provider, color) {
     const session = windowForKind(provider, 'session');
     const weekly = windowForKind(provider, 'weekly');
     const monthly = windowForKind(provider, 'billing');
-    if (session) windows.append(limitWindowNode('Session', session, color, 0.95));
-    if (weekly) windows.append(limitWindowNode('Weekly', weekly, color, 0.68));
+    if (session) windows.append(limitWindowNode('Session', session, color, 0.95, null, false));
+    if (weekly) windows.append(limitWindowNode('Weekly', weekly, color, 0.68, null, false));
     // Monthly spans the full row (like Balance) so it never leaves a half-empty grid cell.
     if (monthly) {
-      const node = limitWindowNode('Monthly', monthly, color, 0.5);
+      const node = limitWindowNode('Monthly', monthly, color, 0.5, null, false);
       node.classList.add('limit-window-wide');
       windows.append(node);
     }
