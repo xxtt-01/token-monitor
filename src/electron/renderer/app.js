@@ -183,6 +183,7 @@ Object.assign(els, {
   appUpdateMessage: document.getElementById('appUpdateMessage'),
   titleIconInput: document.getElementById('titleIconInput'),
   settingsInTitlebarInput: document.getElementById('settingsInTitlebarInput'),
+  goPlanFormulaInput: document.getElementById('goPlanFormulaInput'),
   resetClientDisplayOrderButton: document.getElementById('resetClientDisplayOrderButton'),
   showAllClientsButton: document.getElementById('showAllClientsButton'),
   resetViewDisplayOrderButton: document.getElementById('resetViewDisplayOrderButton'),
@@ -2593,6 +2594,7 @@ function syncSettingsForm() {
   els.titleIconInput.checked = state.settings.titleIconOnly === true;
   els.settingsInTitlebarInput.checked = state.settings.settingsInTitlebar === true;
   els.discordRpcInput.checked = Boolean(state.settings.discordRpcEnabled);
+  if (els.goPlanFormulaInput) els.goPlanFormulaInput.checked = Boolean(state.settings.goPlanFormula);
   syncWindowBehaviorControls();
   els.floatingBubbleInput.checked = state.settings.floatingBubbleEnabled === true;
   if (els.floatingBubbleTriggerInput) els.floatingBubbleTriggerInput.value = state.settings.floatingBubbleTrigger === 'hover' ? 'hover' : 'click';
@@ -3571,6 +3573,11 @@ els.toolIconsInput.addEventListener('change', saveAppearanceFromControls);
 els.titleIconInput.addEventListener('change', saveAppearanceFromControls);
 els.settingsInTitlebarInput.addEventListener('change', saveAppearanceFromControls);
 els.discordRpcInput.addEventListener('change', saveAppearanceFromControls);
+if (els.goPlanFormulaInput) {
+  els.goPlanFormulaInput.addEventListener('change', () => {
+    saveSettings({ goPlanFormula: Boolean(els.goPlanFormulaInput.checked) });
+  });
+}
 els.windowBehaviorInput.addEventListener('change', () => saveSettings({ windowBehavior: els.windowBehaviorInput.value }));
 els.floatingBubbleInput.addEventListener('change', () => {
   els.floatingBubbleOptions?.classList.toggle('hidden', !els.floatingBubbleInput.checked);

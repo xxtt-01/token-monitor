@@ -26,6 +26,27 @@ const OUTPUT_TOKEN_KEYS = ['output', 'outputTokens', 'output_tokens', 'completio
 const CACHE_READ_TOKEN_KEYS = ['cacheRead', 'cacheReadTokens', 'cache_read_tokens', 'cachedTokens', 'cached_tokens', 'cacheReadInputTokens', 'totalCacheRead'];
 const CACHE_WRITE_TOKEN_KEYS = ['cacheWrite', 'cacheWriteTokens', 'cache_write_tokens', 'cacheCreationInputTokens', 'totalCacheWrite'];
 const REASONING_TOKEN_KEYS = ['reasoning', 'reasoningTokens', 'reasoning_tokens'];
+
+// Go 套餐内置定价表（来源: OpenCode Go 套餐官方定价说明）
+const GO_PLAN_PRICING = {
+  "deepseek-v4-flash":   { input: 0.14, output: 0.28, cacheRead: 0.0028 },
+  "deepseek-v4-pro":     { input: 1.74, output: 3.48, cacheRead: 0.0145 },
+  "glm-5.2":             { input: 1.40, output: 4.40, cacheRead: 0.26 },
+  "glm-5.1":             { input: 1.40, output: 4.40, cacheRead: 0.26 },
+  "glm-5":               { input: 1.00, output: 3.20, cacheRead: 0.20 },
+  "kimi-k2.7-code":      { input: 0.95, output: 4.00, cacheRead: 0.19 },
+  "kimi-k2.6":           { input: 0.95, output: 4.00, cacheRead: 0.16 },
+  "kimi-k2.5":           { input: 0.60, output: 3.00, cacheRead: 0.10 },
+  "mimo-v2.5":           { input: 0.14, output: 0.28, cacheRead: 0.0028 },
+  "mimo-v2.5-pro":       { input: 1.74, output: 3.48, cacheRead: 0.0145 },
+  "minimax-m3":          { input: 0.30, output: 1.20, cacheRead: 0.06 },
+  "minimax-m2.7":        { input: 0.30, output: 1.20, cacheRead: 0.06 },
+  "minimax-m2.5":        { input: 0.30, output: 1.20, cacheRead: 0.06 },
+  "qwen3.7-max":         { input: 2.50, output: 7.50, cacheRead: 0.50 },
+  "qwen3.7-plus":        { input: 0.40, output: 1.60, cacheRead: 0.04 },
+  "qwen3.6-plus":        { input: 0.50, output: 3.00, cacheRead: 0.05 },
+};
+
 const STARTED_AT_KEYS = ['startedAt', 'started_at', 'createdAt', 'created_at'];
 const LAST_USED_AT_KEYS = ['lastUsedAt', 'last_used_at', 'updatedAt', 'updated_at', 'lastActivityAt', 'last_activity_at', 'timestamp'];
 
@@ -415,7 +436,7 @@ function normalizePeriod(input) {
   return period;
 }
 
-function extractUsageFromTokscale(json) {
+function extractUsageFromTokscale(json, goPlanFormula) {
   const rows = [];
   collectUsageRows(json, rows);
   if (rows.length === 0 && json && typeof json === 'object') {
@@ -434,7 +455,7 @@ function extractUsageFromTokscale(json) {
   const period = emptyPeriod();
   for (const row of rows) {
     const tokens = tokenValue(row);
-    const cost = costValue(row);
+    let cost = costValue(row);
     const cacheRead = Math.max(0, Math.round(firstNumber(row, CACHE_READ_TOKEN_KEYS)));
     const cacheWrite = Math.max(0, Math.round(firstNumber(row, CACHE_WRITE_TOKEN_KEYS)));
     const output = Math.max(0, Math.round(firstNumber(row, OUTPUT_TOKEN_KEYS)));
@@ -443,6 +464,14 @@ function extractUsageFromTokscale(json) {
     if (client === 'cursor' && model === 'auto') model = 'cursor-auto';
     // input 是总输入（含 cacheRead），不重复加 cacheRead 到 total
     const inputTokens = Math.max(0, Math.round(firstNumber(row, INPUT_TOKEN_KEYS)));
+    // Go 套餐公式: 从 input 中减去 cacheRead，分别按全价和缓存价计费
+    if (goPlanFormula && model && GO_PLAN_PRICING[model] && inputTokens > 0 && cacheRead > 0) {
+      const p = GO_PLAN_PRICING[model];
+      const nonCache = Math.max(0, inputTokens - cacheRead);
+      cost = (nonCache / 1_000_000) * p.input
+           + (output / 1_000_000) * p.output
+           + (cacheRead / 1_000_000) * p.cacheRead;
+    }
     const adjustedTokens = cacheRead > 0 && inputTokens > 0 ? inputTokens + output : tokens;
     period.totalTokens += Math.max(0, Math.round(adjustedTokens));
     period.costUsd += cost;

@@ -166,3 +166,18 @@
 - **根因:** skipTokenscan 只检查锚点存在性和 dateKey，不验证锚点是否包含有效数据
 - **决策:** 新增 `anchorHasData` 检查 (`today/month/allTime.totalTokens > 0`)，空锚点时走锚点扫描路径重新采集
 - **影响范围:** 启动数据展示（空锚点恢复为正常扫描）
+
+## 2026-06-18 13:00: 新增 Go 套餐计费公式开关
+- **文件:**
+  - `src/shared/usage.js`
+  - `src/shared/collector.js`
+  - `src/electron/main.js`
+  - `src/electron/renderer/index.html`
+  - `src/electron/renderer/app.js`
+- **原因:** tokscale 的 cost 公式（input × 输入价 + cacheRead × 缓存价）不适合 DeepSeek/Go 套餐的"从 input 中减去 cacheRead 再分别计价"的规则，导致显示花费虚高 26 倍
+- **决策:**
+  - 新增 `GO_PLAN_PRICING` 内置定价表（16 个 Go 套餐模型）
+  - `extractUsageFromTokscale` 增加 `goPlanFormula` 参数，启用时用公式 `(input - cacheRead) × 输入价 + output × 输出价 + cacheRead × 缓存价` 替代 tokscale 的 cost
+  - 添加 `goPlanFormula` 设置开关（默认关闭），位于 OpenCode 设置面板
+  - 开关只影响在定价表中的模型，其他模型不受影响
+- **影响范围:** 主面板花费显示（启用后正确反映 Go 套餐等值消耗）
