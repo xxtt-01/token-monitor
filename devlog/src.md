@@ -158,3 +158,11 @@
 - **根因:** skipTokenscan 路径只设了 today/month/allTime 变量就结束了，onProgress 只存在于 tokscale 扫描路径
 - **决策:** skipTokenscan 拿到锚点数据后立即触发 onProgress，与全量扫描/锚点扫描路径行为一致
 - **影响范围:** 缓存命中时的启动体验（数据即时可见）
+
+## 2026-06-18 12:00: 修复空锚点导致 skipTokenscan 永远返回 0 数据
+- **文件:**
+  - `src/shared/collector.js`
+- **原因:** 某次全量扫描返回了 0 数据，空锚点被保存后，目录时间戳匹配导致每次启动都走 skipTokenscan 路径，永远返回 0 数据，用户永远看不到数据
+- **根因:** skipTokenscan 只检查锚点存在性和 dateKey，不验证锚点是否包含有效数据
+- **决策:** 新增 `anchorHasData` 检查 (`today/month/allTime.totalTokens > 0`)，空锚点时走锚点扫描路径重新采集
+- **影响范围:** 启动数据展示（空锚点恢复为正常扫描）

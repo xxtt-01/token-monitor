@@ -570,7 +570,11 @@ function startCollector(options) {
     if (includeHistory) lastHistoryAt = Date.now();
     const todayKey = localTodayKey();
     const anchored = Boolean(tickOptions.todayOnly && anchor && anchor.dateKey === todayKey);
-    const dirsMatch = anchored && savedDirTimestamps && timestampsEqual(collectDirTimestamps(clients), savedDirTimestamps);
+    // Only skip tokscale when the anchor actually has data. If all periods are
+    // zero (e.g. from a failed scan) the next relaunch must retry, not silently
+    // show empty data forever.
+    const anchorHasData = anchored && (anchor.today?.totalTokens > 0 || anchor.month?.totalTokens > 0 || anchor.allTime?.totalTokens > 0);
+    const dirsMatch = anchored && anchorHasData && savedDirTimestamps && timestampsEqual(collectDirTimestamps(clients), savedDirTimestamps);
     try {
       const summary = await collectUsageOnce({
         ...options,
