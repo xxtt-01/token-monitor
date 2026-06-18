@@ -167,6 +167,13 @@
 - **决策:** 新增 `anchorHasData` 检查 (`today/month/allTime.totalTokens > 0`)，空锚点时走锚点扫描路径重新采集
 - **影响范围:** 启动数据展示（空锚点恢复为正常扫描）
 
+## 2026-06-18 18:00: 优化目录时间戳缓存 — 排除自同步客户端目录
+- **文件:**
+  - `src/shared/collector.js`
+- **原因:** `collectDirTimestamps` 收集所有客户端目录 mtime，包括 cursor/antigravity 的自同步缓存目录。这些目录在每次 `maybeSyncCursor` 运行后改变，导致下次启动时 `dirsMatch` 为 false，即使其他客户端数据无变化也触发全量扫描
+- **决策:** 遍历时跳过 `SELF_SYNCED_CLIENTS`（cursor/antigravity），避免它们干扰 tokscale 跳过判断
+- **影响范围:** 启动扫描路径（dirTimestamps 缓存）
+
 ## 2026-06-18 13:00: 新增 Go 套餐计费公式开关
 - **文件:**
   - `src/shared/usage.js`

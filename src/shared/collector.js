@@ -488,7 +488,8 @@ function clientDataDirPresence(clientsCsv) {
 function collectDirTimestamps(clientsCsv) {
   const candidates = clientWatchCandidates(clientsCsv);
   const ts = {};
-  for (const dirs of Object.values(candidates)) {
+  for (const [client, dirs] of Object.entries(candidates)) {
+    if (SELF_SYNCED_CLIENTS.has(client)) continue; // cursor/antigravity 由自身 sync 触发，排除后避免下次启动误判
     for (const dir of dirs) {
       try { ts[dir] = fs.statSync(dir).mtimeMs; } catch (_) {}
     }
