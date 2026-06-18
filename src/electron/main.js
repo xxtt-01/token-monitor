@@ -745,19 +745,19 @@ const EDGE_STRIP = 5;           // 隐藏后露出的像素
 const EDGE_TRIGGER = 50;        // 触发吸附的距离
 const EDGE_HOVER = 20;          // 触发滑出的距离
 const EDGE_HIDE_DELAY = 600;    // 鼠标离开后隐藏延迟(ms)
-const EDGE_POLL_MS = 40;        // 鼠标轮询间隔
-const EDGE_ANIM_STEPS = 12;     // 动画步数
-const EDGE_ANIM_STEP_MS = 8;    // 每步间隔
+const EDGE_POLL_MS = 150;       // 鼠标轮询间隔（降低 CPU 占用）
+const EDGE_ANIM_STEPS = 8;      // 动画步数
+const EDGE_ANIM_MS = 60;        // 动画总时长(ms)
+
+let edgeAnimating = false;      // 贴边滑行动画进行中
 
 const edge = {
   enabled: false,
   side: null,        // null | 'left' | 'right' | 'top'
-  expanded: null,    // { x, y, w, h } 展开时的窗口位置
-  docked: null,      // { x, y, w, h } 贴边时的窗口位置
+  expandBounds: null,// { x, y, w, h } 展开时的窗口位置
+  dockBounds: null,  // { x, y, w, h } 贴边时的窗口位置
   monitor: null,     // setInterval 句柄
   hideTimer: null,   // setTimeout 句柄
-  animating: false,
-  animTimer: null,
 };
 
 function edgeDisplay() {
@@ -777,16 +777,6 @@ function edgeDetectSide() {
   return null;
 }
 
-function edgeIsBarelyVisible() {
-  const d = edgeDisplay();
-  if (!d) return false;
-  const wa = d.workArea, b = mainWindow.getBounds();
-  if (edge.side === 'left') return b.x + b.width - wa.x <= EDGE_STRIP + 3;
-  if (edge.side === 'right') return wa.x + wa.width - b.x <= EDGE_STRIP + 3;
-  if (edge.side === 'top') return b.y + b.height - wa.y <= EDGE_STRIP + 3;
-  return false;
-}
-
 function edgeDockBounds(side) {
   const d = edgeDisplay();
   if (!d) return null;
@@ -797,44 +787,58 @@ function edgeDockBounds(side) {
   return null;
 }
 
+/** 进入贴边模式：记录展开位置，移动到仅露 strip 的 dock 位置 */
 function edgeDo(side) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed() || edge.side) return;
   const db = edgeDockBounds(side);
   if (!db) return;
   edge.side = side;
-  edge.expanded = { ...mainWindow.getBounds() };
-  edge.docked = db;
-  // 用 setBounds 前移开检测标记，下个 event loop 恢复
-  edgeSuppress();
+  edge.expandBounds = { ...mainWindow.getBounds() };
+  edge.dockBounds = db;
   mainWindow.setBounds(db);
   edgeStartMonitor();
   sendEdgeDockState();
 }
 
+/** 退出贴边模式：恢复到展开位置，清理状态 */
 function edgeUndo() {
   edgeStopMonitor();
-  if (edge.animTimer) { clearInterval(edge.animTimer); edge.animTimer = null; }
-  edge.animating = false;
   edge.side = null;
-  edge.expanded = null;
-  edge.docked = null;
+  edge.expandBounds = null;
+  edge.dockBounds = null;
   sendEdgeDockState();
 }
 
-function edgeSuppress() {
-  // 在下一个 macrotask 恢复检测（等所有 setBounds 触发的事件处理完）
-  edgeSuppress._once = edgeSuppress._once || (() => { edgeSuppress._active = false; });
-  edgeSuppress._active = true;
-  // 用 queueMicrotask 替代 setTimeout，尽快恢复检测
-  Promise.resolve().then(() => { setTimeout(() => { edgeSuppress._active = false; }, 0); });
-}
+// ─── moved 事件处理（核心） ─────────────────────────────────────
+// 关键设计：不区分用户拖拽和 setBounds 触发，而是用状态守卫来判断：
+//   - 动画期间 → 忽略（edgeAnimating）
+//   - 在贴边模式且窗口在已知位置（dock 或 expand）→ 忽略
+//   - 在贴边模式但窗口不在已知位置（用户拖走了）→ 退出贴边
+//   - 普通模式 → 检测边缘距离，吸附
+const edgeAfterMoved = () => {
+  if (!mainWindow || mainWindow.isDestroyed() || !edge.enabled) return;
+  if (edgeAnimating) return;
 
-function edgeAfterUserMove() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edge.enabled || edgeSuppress._active) return;
-  if (edge.side) edgeUndo();     // 用户拖动了贴边的窗口 → 解除
-  const side = edgeDetectSide(); // 检测是否靠近边缘
+  if (edge.side && edge.expandBounds && edge.dockBounds) {
+    // 贴边模式：检查窗口是否在已知位置
+    const b = mainWindow.getBounds();
+    const atDock   = Math.abs(b.x - edge.dockBounds.x) < 5 && Math.abs(b.y - edge.dockBounds.y) < 5;
+    const atExpand = Math.abs(b.x - edge.expandBounds.x) < 5 && Math.abs(b.y - edge.expandBounds.y) < 5;
+    if (atDock || atExpand) return; // 在已知位置 → 忽略（动画或已稳定）
+
+    // 用户拖离了展开位置 → 退出贴边模式，重新检测新位置
+    const side = edgeDetectSide();
+    edgeUndo();
+    if (side) edgeDo(side);
+    return;
+  }
+
+  // 普通模式：检测是否靠近边缘
+  const side = edgeDetectSide();
   if (side) edgeDo(side);
-}
+};
+
+// ─── 鼠标轮询（贴边后监控鼠标位置决定展开/隐藏） ─────────────────
 
 function edgeStartMonitor() {
   edgeStopMonitor();
@@ -844,29 +848,34 @@ function edgeStartMonitor() {
       const pt = screen.getCursorScreenPoint(), b = mainWindow.getBounds(), d = edgeDisplay();
       if (!d) return;
       const wa = d.workArea;
-      let hover = false;
-      if (edge.side === 'left')  hover = pt.x - wa.x < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height;
-      if (edge.side === 'right') hover = wa.x + wa.width - pt.x < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height;
-      if (edge.side === 'top')   hover = pt.y - wa.y < EDGE_HOVER && pt.x >= b.x && pt.x <= b.x + b.width;
-      if (hover) {
+      const isHorizontal = edge.side === 'left' || edge.side === 'right';
+
+      // 鼠标是否在 strip 热区内？
+      const hover = isHorizontal
+        ? (edge.side === 'left' ? pt.x - wa.x : wa.x + wa.width - pt.x) < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height
+        : pt.y - wa.y < EDGE_HOVER && pt.x >= b.x && pt.x <= b.x + b.width;
+
+      // 窗口当前位置状态
+      const atDock = edge.dockBounds && (isHorizontal
+        ? Math.abs(b.x - edge.dockBounds.x) < 5
+        : Math.abs(b.y - edge.dockBounds.y) < 5);
+
+      const atExpand = edge.expandBounds && (isHorizontal
+        ? Math.abs(b.x - edge.expandBounds.x) < 5
+        : Math.abs(b.y - edge.expandBounds.y) < 5);
+
+      if (hover && atDock && !edgeAnimating) {
+        // 鼠标进入热区，窗口在 dock 位置 → 展开
+        edgeSlide(edge.dockBounds, edge.expandBounds);
+      } else if (hover && atExpand) {
+        // 鼠标在展开窗口上 → 取消隐藏计时
         if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
-        // 检查窗口是否在贴边位置（还未展开）
-        const atDock = edge.side === 'top'
-          ? Math.abs(b.y - edge.docked.y) < 3
-          : Math.abs(b.x - edge.docked.x) < 3;
-        if (atDock && !edge.animating) edgeExpand();
-      } else {
-        // 检查窗口是否在展开位置 → 开始 hide 计时
-        const atExpand = !edge.animating && !edge.hideTimer;
-        const nearExpand = edge.side === 'top'
-          ? Math.abs(b.y - edge.expanded.y) < 5
-          : Math.abs(b.x - edge.expanded.x) < 5;
-        if (atExpand && nearExpand) {
-          edge.hideTimer = setTimeout(() => {
-            edge.hideTimer = null;
-            edgeCollapse();
-          }, EDGE_HIDE_DELAY);
-        }
+      } else if (!hover && atExpand && !edge.hideTimer) {
+        // 鼠标离开展开窗口 → 延迟隐藏
+        edge.hideTimer = setTimeout(() => {
+          edge.hideTimer = null;
+          if (!edgeAnimating) edgeSlide(edge.expandBounds, edge.dockBounds);
+        }, EDGE_HIDE_DELAY);
       }
     } catch (_) {}
   }, EDGE_POLL_MS);
@@ -877,70 +886,66 @@ function edgeStopMonitor() {
   if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
 }
 
-function edgeExpand() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edge.side || !edge.expanded || edge.animating) return;
-  const h = edge.side === 'left' || edge.side === 'right';
-  edgeSlide(h ? edge.expanded.x : edge.expanded.y, h);
-}
+// ─── 滑行动画（easeInOutQuad） ──────────────────────────────────
 
-function edgeCollapse() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edge.side || !edge.docked || edge.animating) return;
-  const h = edge.side === 'left' || edge.side === 'right';
-  edgeSlide(h ? edge.docked.x : edge.docked.y, h);
-}
+let edgeAnimTimer = null;
 
-function edgeSlide(target, horizontal) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const b = mainWindow.getBounds();
-  const cur = horizontal ? b.x : b.y;
-  if (cur === target) return;
-  edge.animating = true;
-  const dp = (target - cur) / EDGE_ANIM_STEPS;
+function edgeSlide(from, to) {
+  if (!mainWindow || mainWindow.isDestroyed() || !from || !to) return;
+  if (from.x === to.x && from.y === to.y) return;
+  if (edgeAnimTimer) { clearInterval(edgeAnimTimer); edgeAnimTimer = null; }
+
+  const stepMs = Math.max(1, Math.round(EDGE_ANIM_MS / EDGE_ANIM_STEPS));
   let step = 0;
-  edge.animTimer = setInterval(() => {
-    edgeSuppress._active = true;
+  edgeAnimating = true;
+
+  edgeAnimTimer = setInterval(() => {
     step++;
-    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(edge.animTimer); edge.animTimer = null; return; }
-    const nb = mainWindow.getBounds();
-    if (step >= EDGE_ANIM_STEPS) { if (horizontal) nb.x = target; else nb.y = target; }
-    else { const p = Math.round(cur + dp * step); if (horizontal) nb.x = p; else nb.y = p; }
-    mainWindow.setBounds(nb);
+    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(edgeAnimTimer); edgeAnimTimer = null; edgeAnimating = false; return; }
+
+    const t = Math.min(step / EDGE_ANIM_STEPS, 1);
+    // easeInOutQuad
+    const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+
+    mainWindow.setBounds({
+      x: Math.round(from.x + (to.x - from.x) * e),
+      y: Math.round(from.y + (to.y - from.y) * e),
+      width: from.width,
+      height: from.height,
+    });
+
     if (step >= EDGE_ANIM_STEPS) {
-      clearInterval(edge.animTimer); edge.animTimer = null;
-      edge.animating = false;
+      clearInterval(edgeAnimTimer); edgeAnimTimer = null;
+      edgeAnimating = false;
     }
-  }, EDGE_ANIM_STEP_MS);
+  }, stepMs);
 }
 
+/** 启动贴边功能（设置变更或窗口创建时调用） */
 function startEdgeDock() {
   edge.enabled = settings.edgeDock === true;
   if (!edge.enabled) {
     if (edge.side) {
-      if (edge.expanded) mainWindow?.setBounds(edge.expanded);
+      if (edge.expandBounds) mainWindow?.setBounds(edge.expandBounds);
       edgeUndo();
-    } else {
-      edgeStopMonitor();
     }
     return;
   }
-  // 重启检测：如果上次关闭时处于贴边位置（仅 strip 可见），重新吸附
+  // 启动时检测：如果窗口仅露 strip（上次是贴边关闭的），重新吸附
   if (!edge.side && mainWindow && !mainWindow.isDestroyed()) {
     const side = edgeDetectSide();
     if (side) {
-      // 先假设是这个方向，检测是否几乎不可见
-      edge.side = side;
-      const barely = edgeIsBarelyVisible();
-      edge.side = null;
-      if (barely) edgeDo(side);
+      const d = edgeDisplay();
+      if (d) {
+        const wa = d.workArea, b = mainWindow.getBounds();
+        const barely = side === 'left' ? b.x + b.width - wa.x <= EDGE_STRIP + 3
+                     : side === 'right' ? wa.x + wa.width - b.x <= EDGE_STRIP + 3
+                     : b.y + b.height - wa.y <= EDGE_STRIP + 3;
+        if (barely) edgeDo(side);
+      }
     }
   }
 }
-
-// 供 moved 事件调用的入口 —— 必须与 setBounds 解耦
-const edgeMoveCheck = () => {
-  if (edgeSuppress._active) { edgeSuppress._active = false; return; }
-  edgeAfterUserMove();
-};
 
 function readSettings() {
   settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -2125,7 +2130,7 @@ function createWindow(boundsOverride, options = {}) {
   win.on('resized', persistBoundsSoon);
   win.on('moved', () => {
     persistBoundsSoon();
-    edgeMoveCheck();
+    edgeAfterMoved();
   });
   win.on('close', (event) => {
     if (quitRequested) return;

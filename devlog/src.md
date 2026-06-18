@@ -229,3 +229,21 @@
   - 动画过程中也设置该标志
   - 选项改为中文"贴边隐藏 — 拖到屏幕边缘自动吸附隐藏"
 - **影响范围:** 贴边隐藏功能稳定性
+
+## 2026-06-18 16:00: 重写贴边隐藏 — 去掉微任务抑制，改用状态守卫
+- **文件:**
+  - `src/electron/main.js`
+- **原因:** 贴边隐藏功能仍不稳定（窗口缩在边缘无法唤出），微任务抑制机制（`edgeSuppress`）过于复杂且不可靠
+- **根因:** `edgeSuppress` 用 `Promise.resolve().then(setTimeout(clear, 0))` 尝试区分 `setBounds` 触发的 `moved` 事件和用户拖拽，但时序不可控
+- **决策:**
+  - 参考开源实现改造：
+    - `nashaofu/electron-demo`（最完整 QQ 风格实现）
+    - `lx-music-desktop`（成熟方案，300ms 轮询）
+  - 去掉 `edgeSuppress` 微任务抑制机制
+  - 改用状态守卫：动画中忽略、在已知位置忽略、位置异常才退出
+  - 轮询间隔从 40ms 降到 150ms
+  - 动画从线性插值改为 easeInOutQuad 缓动曲线
+  - 动画步数从 12 降到 8，总时长 60ms
+  - 删除了 `edgeExpand`/`edgeCollapse`/`edgeSlide`(旧) 等冗余辅助函数
+  - 统一用 `edgeSlide(from, to)` 处理双向动画
+- **影响范围:** 贴边隐藏功能全部重写（main.js 约 200 行）
