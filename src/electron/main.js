@@ -850,11 +850,6 @@ function edgeStartMonitor() {
       const wa = d.workArea;
       const isHorizontal = edge.side === 'left' || edge.side === 'right';
 
-      // 鼠标是否在 strip 热区内？
-      const hover = isHorizontal
-        ? (edge.side === 'left' ? pt.x - wa.x : wa.x + wa.width - pt.x) < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height
-        : pt.y - wa.y < EDGE_HOVER && pt.x >= b.x && pt.x <= b.x + b.width;
-
       // 窗口当前位置状态
       const atDock = edge.dockBounds && (isHorizontal
         ? Math.abs(b.x - edge.dockBounds.x) < 5
@@ -864,18 +859,24 @@ function edgeStartMonitor() {
         ? Math.abs(b.x - edge.expandBounds.x) < 5
         : Math.abs(b.y - edge.expandBounds.y) < 5);
 
-      if (hover && atDock && !edgeAnimating) {
-        // 鼠标进入热区，窗口在 dock 位置 → 展开
-        edgeSlide(edge.dockBounds, edge.expandBounds);
-      } else if (hover && atExpand) {
-        // 鼠标在展开窗口上 → 取消隐藏计时
-        if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
-      } else if (!hover && atExpand && !edge.hideTimer) {
-        // 鼠标离开展开窗口 → 延迟隐藏
-        edge.hideTimer = setTimeout(() => {
-          edge.hideTimer = null;
-          if (!edgeAnimating) edgeSlide(edge.expandBounds, edge.dockBounds);
-        }, EDGE_HIDE_DELAY);
+      if (atDock) {
+        // 贴边状态：检测鼠标是否靠近屏幕边缘热区
+        const hover = isHorizontal
+          ? (edge.side === 'left' ? pt.x - wa.x : wa.x + wa.width - pt.x) < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height
+          : pt.y - wa.y < EDGE_HOVER && pt.x >= b.x && pt.x <= b.x + b.width;
+        if (hover && !edgeAnimating) edgeSlide(edge.dockBounds, edge.expandBounds);
+      } else if (atExpand) {
+        // 展开状态：检测鼠标是否在窗口范围内（离开才启动隐藏计时）
+        const onWindow = pt.x >= b.x - 5 && pt.x <= b.x + b.width + 5 &&
+                         pt.y >= b.y - 5 && pt.y <= b.y + b.height + 5;
+        if (onWindow) {
+          if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
+        } else if (!edge.hideTimer) {
+          edge.hideTimer = setTimeout(() => {
+            edge.hideTimer = null;
+            if (!edgeAnimating) edgeSlide(edge.expandBounds, edge.dockBounds);
+          }, EDGE_HIDE_DELAY);
+        }
       }
     } catch (_) {}
   }, EDGE_POLL_MS);
