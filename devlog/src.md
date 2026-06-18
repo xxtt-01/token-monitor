@@ -174,6 +174,16 @@
 - **决策:** 遍历时跳过 `SELF_SYNCED_CLIENTS`（cursor/antigravity），避免它们干扰 tokscale 跳过判断
 - **影响范围:** 启动扫描路径（dirTimestamps 缓存）
 
+## 2026-06-18 20:00: 修复锚点 tick 后 dirTimestamps 不更新 + sync 被 skip 跳过
+- **文件:**
+  - `src/shared/collector.js`
+- **原因/根因:**
+  - **Issue A：** `savedDirTimestamps` 只在全量扫描后更新。锚点 tick 完成后时间戳快照仍为旧值，一旦目录有变化，`dirsMatch` 在所有后续 tick 中永远为 false，缓存优化完全失效
+  - **Issue B：** `maybeSyncCursor`/`maybeSyncAntigravity` 写在 `if (skipTokenscan)` 的 else 分支内。skip 路径下 sync 完全跳过，且 `SELF_SYNCED_CLIENTS` 已被排除在 `collectDirTimestamps` 外，目录不会变化，sync 永远无法恢复
+- **修复:**
+  - **A：** 锚点 tick 且 `!dirsMatch` 且数据有效时，更新 `savedDirTimestamps` 到新基线，后续 tick 可重新跳过
+  - **B：** 将 sync 移到 `skipTokenscan` 判断之前，始终执行（`syncDue` 内部 5 分钟限速）
+
 ## 2026-06-18 19:00: 批量修复审查发现的三大模块问题
 - **文件:**
   - `src/shared/usage.js`

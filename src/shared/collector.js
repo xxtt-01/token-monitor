@@ -360,10 +360,14 @@ async function collectUsageOnce(options) {
   let month = emptyPeriod();
   let allTime = emptyPeriod();
   if (normalizedClients) {
+    // Sync cursor/antigravity 始终执行（syncDue 内部 5 分钟限速），不受 skipTokenscan 影响
+    await maybeSyncCursor(normalizedClients, options.logger);
+    await maybeSyncAntigravity(normalizedClients, options.logger, options.homeDir || os.homedir());
+
     const anchor = options.todayOnlyAnchor;
     if (options.skipTokenscan) {
       // No directories changed since last full scan — reuse cached periods directly.
-      // Skips sync, tokscale, and applySessionTimestamps (already embedded in anchor).
+      // Skips tokscale and applySessionTimestamps (already embedded in anchor).
       today = anchor.today;
       month = anchor.month;
       allTime = anchor.allTime;
@@ -371,8 +375,6 @@ async function collectUsageOnce(options) {
       // history and limits are still being collected.
       options.onProgress?.({ today, month, allTime, updatedAt: new Date().toISOString() });
     } else {
-      await maybeSyncCursor(normalizedClients, options.logger);
-      await maybeSyncAntigravity(normalizedClients, options.logger, options.homeDir || os.homedir());
       if (anchor && anchor.dateKey === localTodayKey()) {
         // Anchored tick: scan only --today, derive month/allTime via applyPeriodDelta.
         const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
@@ -615,6 +617,11 @@ function startCollector(options) {
           savedDirTimestamps = collectDirTimestamps(clients);
           fs.writeFileSync(dirTimestampsPath, JSON.stringify(savedDirTimestamps));
         } catch (_) {}
+      } else if (!dirsMatch && summary?.today?.totalTokens > 0) {
+        // 锚点 tick 后更新时间戳快照：目录变化已被本次扫描消化，锁定新基线
+        // 使后续 tick 可重新命中 dirsMatch → skipTokenscan
+        savedDirTimestamps = collectDirTimestamps(clients);
+        try { fs.writeFileSync(dirTimestampsPath, JSON.stringify(savedDirTimestamps)); } catch (_) {}
       }
       await onUpdate?.(summary, reason);
     } catch (error) {
