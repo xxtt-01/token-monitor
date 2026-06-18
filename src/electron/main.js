@@ -2143,6 +2143,7 @@ app.whenReady().then(() => {
     const previousCurrency = settings.currency;
     const previousStartAtLogin = settings.startAtLogin;
     const previousCustomModelPricing = JSON.stringify(settings.customModelPricing || []);
+    const previousGoPlanFormula = settings.goPlanFormula;
     const normalizedCurrency = patch.currency !== undefined ? normalizeCurrency(patch.currency, settings.currency) : normalizeCurrency(settings.currency);
     const normalizedPatch = { ...patch, currency: normalizedCurrency };
     delete normalizedPatch.codexManagedAccounts;
@@ -2237,7 +2238,8 @@ app.whenReady().then(() => {
       settings.limitProviders !== previousLimitProviders ||
       settings.limitsRefreshMs !== previousLimitsRefreshMs ||
       settings.historyEnabled !== previousHistoryEnabled ||
-      settings.deepseekApiKey !== previousDeepSeekApiKey
+      settings.deepseekApiKey !== previousDeepSeekApiKey ||
+      settings.goPlanFormula !== previousGoPlanFormula
     ) {
       startMode();
     }

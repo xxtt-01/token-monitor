@@ -181,3 +181,11 @@
   - 添加 `goPlanFormula` 设置开关（默认关闭），位于 OpenCode 设置面板
   - 开关只影响在定价表中的模型，其他模型不受影响
 - **影响范围:** 主面板花费显示（启用后正确反映 Go 套餐等值消耗）
+
+## 2026-06-18 13:30: 修复切换 Go 套餐开关后需要重启才能生效的问题
+- **文件:**
+  - `src/electron/main.js`
+- **原因:** `goPlanFormula` 在 collector 初始化时捕获到闭包中，切换开关后只保存了设置但没重启 collector，导致刷新按钮仍用旧值
+- **根因:** 设置变更检测列表中没有 `goPlanFormula`
+- **决策:** settings:update handler 中新增 `previousGoPlanFormula` 追踪，检测到变化时自动调用 `startMode()` 重启 collector
+- **影响范围:** Go 套餐开关即时生效（无需重启应用）
