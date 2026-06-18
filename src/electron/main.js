@@ -792,8 +792,20 @@ function edgeDo(side, presetExpand) {
   if (!mainWindow || mainWindow.isDestroyed() || edge.side) return;
   const db = edgeDockBounds(side);
   if (!db) return;
+  // 禁止 resize 防止 Windows 分屏干扰
+  try { if (mainWindow.isResizable()) mainWindow.setResizable(false); } catch (_) {}
   edge.side = side;
-  edge.expandBounds = presetExpand || { ...mainWindow.getBounds() };
+  edge.expandBounds = presetExpand || (() => {
+    const b = mainWindow.getBounds();
+    const d = edgeDisplay();
+    if (!d) return b;
+    const wa = d.workArea;
+    // 展开位置修正到与 workArea 边缘齐平，确保展开后完全可见
+    if (side === 'left')   return { ...b, x: wa.x };
+    if (side === 'right')  return { ...b, x: wa.x + wa.width - b.width };
+    if (side === 'top')    return { ...b, y: wa.y };
+    return b;
+  })();
   edge.dockBounds = db;
   mainWindow.setBounds(db);
   edgeStartMonitor();
@@ -808,6 +820,8 @@ function edgeUndo() {
   edge.side = null;
   edge.expandBounds = null;
   edge.dockBounds = null;
+  // 恢复 resize（在 edgeDo 中被禁止以阻止 Windows 分屏）
+  try { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isResizable()) mainWindow.setResizable(true); } catch (_) {}
   sendEdgeDockState();
 }
 
@@ -920,6 +934,8 @@ function edgeSlide(from, to) {
     if (step >= EDGE_ANIM_STEPS) {
       clearInterval(edgeAnimTimer); edgeAnimTimer = null;
       edgeAnimating = false;
+      // 滑完恢复 resize（展开后可正常拖拽和分屏，edgeDo 中已被禁用）
+      try { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isResizable()) mainWindow.setResizable(true); } catch (_) {}
     }
   }, stepMs);
 }
@@ -2140,6 +2156,13 @@ function createWindow(boundsOverride, options = {}) {
   win.on('moved', () => {
     persistBoundsSoon();
     edgeAfterMoved();
+  });
+  // 拖拽中检测边缘临近 → 禁止 resize 阻止 Windows 分屏干扰
+  win.on('move', () => {
+    if (!edge.enabled || edge.side || !mainWindow || mainWindow.isDestroyed()) return;
+    if (edgeDetectSide() && mainWindow.isResizable()) {
+      try { mainWindow.setResizable(false); } catch (_) {}
+    }
   });
   win.on('close', (event) => {
     if (quitRequested) return;

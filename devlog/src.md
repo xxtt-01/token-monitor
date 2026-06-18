@@ -271,3 +271,13 @@
   - `edgeDo(side, presetExpand?)` 增加可选参数，启动时传入正确的展开坐标
   - `edgeUndo()` 清理 `edgeAnimTimer` + 重置 `edgeAnimating`
 - **影响范围:** 启动流程、贴边解除流程、退出贴边清理
+
+## 2026-06-18 17:30: 修复三类贴边隐藏问题（分屏干扰 + 展开不全 + 光效增强）
+- **文件:**
+  - `src/electron/main.js`
+  - `src/electron/renderer/styles.css`
+- **原因/决策:**
+  1. **Windows 分屏干扰（Aero Snap）：** 拖到边缘时 Windows 分屏布局覆盖，窗口变成半屏。在 `move` 事件中检测边缘临近后立即 `setResizable(false)` 阻止 Snap，`edgeDo` 中确认禁用，`edgeUndo` 和动画完成后恢复
+  2. **展开不全：** 用户拖到边缘触发吸附时 `expandBounds` 直接沿用拖拽释放位置（可能离边缘还有几像素~几十像素），展开后部分窗口仍在屏幕外。`edgeDo` 计算 `expandBounds` 时修正到与 `workArea` 边缘齐平（左贴边 `x: wa.x`，右贴边 `x: wa.x + wa.width - b.width`）
+  3. **光效不够炫酷：** 改为 4px 宽 + 三色渐变（青→蓝→紫→蓝→青）+ 流光扫描动画（background-position 3s 循环）+ 霓虹辉光（drop-shadow）+ 外发光 box-shadow，两层动画叠加
+- **影响范围:** 贴边隐藏功能
