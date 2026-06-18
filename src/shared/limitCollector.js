@@ -1862,41 +1862,67 @@ async function fetchOpenCodeLimits(options = {}, deps = {}) {
 }
 
 async function fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, nowMs, updatedAt) {
-  const [goWeb, zen] = await Promise.all([
-    fetchGoWeb(cookie, { now: () => nowMs }),
-    fetchZen(cookie, { now: () => nowMs, workspaceId: '' })
-  ]);
+  const PROFILE_TIMEOUT_MS = 15000;
+  let timer;
+  try {
+    const result = await Promise.race([
+      (async () => {
+        const [goWeb, zen] = await Promise.all([
+          fetchGoWeb(cookie, { now: () => nowMs }),
+          fetchZen(cookie, { now: () => nowMs, workspaceId: '' })
+        ]);
+        return { goWeb, zen };
+      })(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), PROFILE_TIMEOUT_MS);
+      })
+    ]);
+    clearTimeout(timer);
 
-  const windows = [];
-  let status = 'notConfigured';
-  let balanceUsd = null;
+    const { goWeb, zen } = result;
+    const windows = [];
+    let status = 'notConfigured';
+    let balanceUsd = null;
 
-  if (goWeb && goWeb.status === 'ok' && goWeb.windows.length > 0) {
-    windows.push(...goWeb.windows);
-    status = 'ok';
+    if (goWeb && goWeb.status === 'ok' && goWeb.windows.length > 0) {
+      windows.push(...goWeb.windows);
+      status = 'ok';
+    }
+
+    if (zen && zen.status === 'ok') {
+      windows.push(...zen.windows);
+      status = 'ok';
+      if (typeof zen.balanceUsd === 'number' && Number.isFinite(zen.balanceUsd)) balanceUsd = zen.balanceUsd;
+    }
+
+    if (status !== 'ok') {
+      const failStatus = goWeb?.status || zen?.status || 'unauthorized';
+      status = failStatus;
+    }
+
+    return normalizeLimitProvider({
+      provider: 'opencode',
+      accountKey: hashKey('opencode', name),
+      accountLabel: name,
+      source: 'web',
+      status,
+      updatedAt,
+      windows,
+      balanceUsd
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    return normalizeLimitProvider({
+      provider: 'opencode',
+      accountKey: hashKey('opencode', name),
+      accountLabel: name,
+      source: 'web',
+      status: 'unavailable',
+      updatedAt,
+      windows: [],
+      balanceUsd: null
+    });
   }
-
-  if (zen && zen.status === 'ok') {
-    windows.push(...zen.windows);
-    status = 'ok';
-    if (typeof zen.balanceUsd === 'number' && Number.isFinite(zen.balanceUsd)) balanceUsd = zen.balanceUsd;
-  }
-
-  if (status !== 'ok') {
-    const failStatus = goWeb?.status || zen?.status || 'unauthorized';
-    status = failStatus;
-  }
-
-  return normalizeLimitProvider({
-    provider: 'opencode',
-    accountKey: hashKey('opencode', name),
-    accountLabel: name,
-    source: 'web',
-    status,
-    updatedAt,
-    windows,
-    balanceUsd
-  });
 }
 
 function providerStatusFromError(error) {

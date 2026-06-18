@@ -3687,12 +3687,10 @@ window.tokenMonitor.onFloatingBubbleState?.((payload) => {
 });
 
 let edgeGlowEl = null;
-let edgeGlowTimer = null;
 
 window.tokenMonitor.onEdgeDockState?.((payload) => {
   for (const cls of ['edge-dock-left', 'edge-dock-right', 'edge-dock-top']) document.body.classList.remove(cls);
   if (edgeGlowEl) { edgeGlowEl.remove(); edgeGlowEl = null; }
-  if (edgeGlowTimer) { clearInterval(edgeGlowTimer); edgeGlowTimer = null; }
   if (payload?.side) {
     document.body.classList.add('edge-dock-' + payload.side);
     edgeGlowEl = document.createElement('div');
@@ -3700,20 +3698,13 @@ window.tokenMonitor.onEdgeDockState?.((payload) => {
     const s = {
       position: 'fixed', zIndex: '99999', pointerEvents: 'none',
       background: 'linear-gradient(180deg, rgba(64,200,255,0.95), rgba(180,100,255,1) 50%, rgba(64,200,255,0.95))',
-      boxShadow: '0 0 18px rgba(100,160,255,0.7), 0 0 40px rgba(140,90,255,0.3)',
-      opacity: '0.7', transition: 'opacity 1.2s ease-in-out',
+      animation: 'edge-glow-breathe 2.5s ease-in-out infinite',
     };
     if (payload.side === 'left')   { s.right = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
     if (payload.side === 'right')  { s.left = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
     if (payload.side === 'top')    { s.bottom = '0'; s.left = '0'; s.right = '0'; s.height = '6px'; }
     Object.assign(edgeGlowEl.style, s);
     document.body.appendChild(edgeGlowEl);
-    let low = false;
-    edgeGlowTimer = setInterval(() => {
-      if (!edgeGlowEl) { clearInterval(edgeGlowTimer); edgeGlowTimer = null; return; }
-      edgeGlowEl.style.opacity = low ? '0.7' : '1';
-      low = !low;
-    }, 1200);
   }
 });
 

@@ -27,7 +27,10 @@ const CACHE_READ_TOKEN_KEYS = ['cacheRead', 'cacheReadTokens', 'cache_read_token
 const CACHE_WRITE_TOKEN_KEYS = ['cacheWrite', 'cacheWriteTokens', 'cache_write_tokens', 'cacheCreationInputTokens', 'totalCacheWrite'];
 const REASONING_TOKEN_KEYS = ['reasoning', 'reasoningTokens', 'reasoning_tokens'];
 
-// Go 套餐内置定价表（来源: OpenCode Go 套餐官方定价说明）
+// Go 套餐内置定价表
+// 来源: https://opencode.ai/pricing (OpenCode Go 套餐官方定价说明)
+// 更新日期: 2026-06-18 — OpenCode 可能随时调价，请以官网为准
+// 如需覆盖单个模型，请使用设置中的 Custom model pricing 功能
 const GO_PLAN_PRICING = {
   "deepseek-v4-flash":   { input: 0.14, output: 0.28, cacheRead: 0.0028 },
   "deepseek-v4-pro":     { input: 1.74, output: 3.48, cacheRead: 0.0145 },
@@ -465,7 +468,8 @@ function extractUsageFromTokscale(json, goPlanFormula) {
     // input 是总输入（含 cacheRead），不重复加 cacheRead 到 total
     const inputTokens = Math.max(0, Math.round(firstNumber(row, INPUT_TOKEN_KEYS)));
     // Go 套餐公式: 从 input 中减去 cacheRead，分别按全价和缓存价计费
-    if (goPlanFormula && model && GO_PLAN_PRICING[model] && inputTokens > 0 && cacheRead > 0) {
+    // cacheRead=0 时退化为 (input × 输入价 + output × 输出价)
+    if (goPlanFormula && model && GO_PLAN_PRICING[model] && inputTokens > 0) {
       const p = GO_PLAN_PRICING[model];
       const nonCache = Math.max(0, inputTokens - cacheRead);
       cost = (nonCache / 1_000_000) * p.input

@@ -174,6 +174,29 @@
 - **决策:** 遍历时跳过 `SELF_SYNCED_CLIENTS`（cursor/antigravity），避免它们干扰 tokscale 跳过判断
 - **影响范围:** 启动扫描路径（dirTimestamps 缓存）
 
+## 2026-06-18 19:00: 批量修复审查发现的三大模块问题
+- **文件:**
+  - `src/shared/usage.js`
+  - `src/electron/renderer/index.html`
+  - `src/electron/main.js`
+  - `src/electron/renderer/app.js`
+  - `src/electron/renderer/styles.css`
+  - `src/shared/limitCollector.js`
+- **修复清单:**
+  - **Go 公式去掉 `cacheRead > 0` 限制：** cacheRead=0 时也走 Go 定价，退化公式为 input×输入价 + output×输出价
+  - **定价表加来源注释：** URL + 更新日期 + 提示通过 Custom pricing 覆盖
+  - **Go 复选框移到 Window 设置：** 从 OpenCode 面板移到 Custom Pricing 区域，语义更准确
+  - **移除 CSS `::after` 双发光：** 保留 JS edge-glow div 唯一实现
+  - **`move` 事件加 `edgeAnimating` 守卫 + 恢复 resize：** 拖离边缘时 `setResizable(true)`
+  - **`edgeDock:state` 加 `enabled` 字段：** 渲染器可区分"禁用"和"启用未吸附"
+  - **光效改用 CSS animation：** 替换 JS setInterval，无 transition 断裂问题
+  - **OpenCode profile fetch 超时：** 15s `Promise.race` 超时，超时返回 unavailable
+  - **`renameProfile` 重名检测：** 新名称已存在时返回错误
+- **误报排除（代码已正确）：**
+  - `isConfiguredProvider` — `provider.status` 写法正确
+  - profile 保存失败清空表单 — 重置在 success 分支内，失败保留输入
+  - contenteditable Enter/Escape — 已有 `keydown` 事件绑定
+
 ## 2026-06-18 13:00: 新增 Go 套餐计费公式开关
 - **文件:**
   - `src/shared/usage.js`

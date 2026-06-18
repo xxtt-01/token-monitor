@@ -502,7 +502,7 @@ function sendFloatingBubbleState() {
 
 function sendEdgeDockState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  try { mainWindow.webContents.send('edgeDock:state', { side: edge.side }); } catch (_) {}
+  try { mainWindow.webContents.send('edgeDock:state', { side: edge.side, enabled: edge.enabled }); } catch (_) {}
 }
 
 function stopFloatingBubbleAutoCollapseTimer() {
@@ -2163,9 +2163,14 @@ function createWindow(boundsOverride, options = {}) {
   });
   // 拖拽中检测边缘临近 → 禁止 resize 阻止 Windows 分屏干扰
   win.on('move', () => {
-    if (!edge.enabled || edge.side || !mainWindow || mainWindow.isDestroyed()) return;
-    if (edgeDetectSide() && mainWindow.isResizable()) {
-      try { mainWindow.setResizable(false); } catch (_) {}
+    if (!edge.enabled || edge.side || edgeAnimating || !mainWindow || mainWindow.isDestroyed()) return;
+    if (edgeDetectSide()) {
+      if (mainWindow.isResizable()) {
+        try { mainWindow.setResizable(false); } catch (_) {}
+      }
+    } else if (!mainWindow.isResizable()) {
+      // 拖离边缘 → 恢复 resize
+      try { mainWindow.setResizable(true); } catch (_) {}
     }
   });
   win.on('close', (event) => {
@@ -2815,6 +2820,7 @@ app.whenReady().then(() => {
     if (!newName || oldName === newName) return { ok: false, error: 'Invalid name' };
     const profiles = settings.opencodeProfiles || {};
     if (!profiles[oldName]) return { ok: false, error: 'Profile not found' };
+    if (profiles[newName]) return { ok: false, error: 'Profile name already exists' };
     profiles[newName] = profiles[oldName];
     delete profiles[oldName];
     settings.opencodeProfiles = profiles;

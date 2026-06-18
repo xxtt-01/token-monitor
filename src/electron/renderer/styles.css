@@ -2432,77 +2432,8 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   transition: color 0.3s;
 }
 
-/* 贴边隐藏光效 */
-@keyframes edge-shimmer {
-  0%   { background-position: 0% 0%; }
-  50%  { background-position: 100% 100%; }
-  100% { background-position: 0% 0%; }
-}
-
-@keyframes edge-glow-pulse {
-  0%, 100% { opacity: 0.5; box-shadow: 0 0 8px rgba(100, 160, 255, 0.3), 0 0 20px rgba(100, 140, 255, 0.1); }
-  50%      { opacity: 1;   box-shadow: 0 0 14px rgba(130, 180, 255, 0.6), 0 0 30px rgba(140, 90, 255, 0.25); }
-}
-
-body.edge-dock-left::after {
-  content: '';
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  background: linear-gradient(180deg,
-    rgba(64, 200, 255, 0.9),
-    rgba(100, 160, 255, 0.95) 25%,
-    rgba(180, 100, 255, 1) 50%,
-    rgba(100, 160, 255, 0.95) 75%,
-    rgba(64, 200, 255, 0.9)
-  );
-  background-size: 100% 300%;
-  animation: edge-shimmer 4s ease-in-out infinite,
-             edge-glow-pulse 2.5s ease-in-out infinite;
-  z-index: 9999;
-  pointer-events: none;
-}
-
-body.edge-dock-right::after {
-  content: '';
-  position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  background: linear-gradient(180deg,
-    rgba(64, 200, 255, 0.9),
-    rgba(100, 160, 255, 0.95) 25%,
-    rgba(180, 100, 255, 1) 50%,
-    rgba(100, 160, 255, 0.95) 75%,
-    rgba(64, 200, 255, 0.9)
-  );
-  background-size: 100% 300%;
-  animation: edge-shimmer 4s ease-in-out infinite,
-             edge-glow-pulse 2.5s ease-in-out infinite;
-  z-index: 9999;
-  pointer-events: none;
-}
-
-body.edge-dock-top::after {
-  content: '';
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: linear-gradient(90deg,
-    rgba(64, 200, 255, 0.9),
-    rgba(100, 160, 255, 0.95) 25%,
-    rgba(180, 100, 255, 1) 50%,
-    rgba(100, 160, 255, 0.95) 75%,
-    rgba(64, 200, 255, 0.9)
-  );
-  background-size: 300% 100%;
-  animation: edge-shimmer 4s ease-in-out infinite,
-             edge-glow-pulse 2.5s ease-in-out infinite;
-  z-index: 9999;
-  pointer-events: none;
+/* 贴边隐藏光效 — 由 JS 注入 DOM（app.js edgeGlowEl） */
+@keyframes edge-glow-breathe {
+  0%, 100% { opacity: 0.7; box-shadow: 0 0 18px rgba(100,160,255,0.5), 0 0 40px rgba(140,90,255,0.2); }
+  50%      { opacity: 1;   box-shadow: 0 0 22px rgba(100,160,255,0.85), 0 0 50px rgba(140,90,255,0.35); }
 }
