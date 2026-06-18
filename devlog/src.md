@@ -258,3 +258,16 @@
   - 展开态（`atExpand`）：改用窗口范围检测（鼠标在窗口上 → 保持，离开窗口 → 开始倒计时）
   - 这样用户可以在展开的窗口中自由操作，离开窗口才自动隐藏
 - **影响范围:** 贴边隐藏监控逻辑（edgeStartMonitor）
+
+## 2026-06-18 17:00: 修复贴边隐藏多处 bug（启动无法展开 + 动画残留 + 关闭贴边时窗口跑位）
+- **文件:**
+  - `src/electron/main.js`
+- **原因/根因:** 三个独立 bug：
+  1. **启动无法展开：** `startEdgeDock` 用 `edgeDetectSide()` 检测贴边窗口，但贴边后窗口坐标在屏幕外数百像素（x=-1195），50px 阈值永远无法命中。且即使命中了，`expandBounds` 被设为与 `dockBounds` 相同的贴边坐标，导致 `edgeSlide` 检测 `from === to` 直接返回
+  2. **动画残留：** `edgeUndo()` 没清理 `edgeAnimTimer`，关闭贴边或拖离时动画继续跑，窗口跑到错误位置
+  3. **expandBounds 不准：** `edgeDo` 直接存 `mainWindow.getBounds()`，启动时窗口已在贴边位置，存的是贴边坐标
+- **决策:**
+  - `startEdgeDock` 不依赖 `edgeDetectSide()`，改直接检测窗口可见 strip 位置（`b.x + b.width` 等）
+  - `edgeDo(side, presetExpand?)` 增加可选参数，启动时传入正确的展开坐标
+  - `edgeUndo()` 清理 `edgeAnimTimer` + 重置 `edgeAnimating`
+- **影响范围:** 启动流程、贴边解除流程、退出贴边清理

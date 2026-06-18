@@ -788,12 +788,12 @@ function edgeDockBounds(side) {
 }
 
 /** 进入贴边模式：记录展开位置，移动到仅露 strip 的 dock 位置 */
-function edgeDo(side) {
+function edgeDo(side, presetExpand) {
   if (!mainWindow || mainWindow.isDestroyed() || edge.side) return;
   const db = edgeDockBounds(side);
   if (!db) return;
   edge.side = side;
-  edge.expandBounds = { ...mainWindow.getBounds() };
+  edge.expandBounds = presetExpand || { ...mainWindow.getBounds() };
   edge.dockBounds = db;
   mainWindow.setBounds(db);
   edgeStartMonitor();
@@ -803,6 +803,8 @@ function edgeDo(side) {
 /** 退出贴边模式：恢复到展开位置，清理状态 */
 function edgeUndo() {
   edgeStopMonitor();
+  if (edgeAnimTimer) { clearInterval(edgeAnimTimer); edgeAnimTimer = null; }
+  edgeAnimating = false;
   edge.side = null;
   edge.expandBounds = null;
   edge.dockBounds = null;
@@ -933,16 +935,22 @@ function startEdgeDock() {
     return;
   }
   // 启动时检测：如果窗口仅露 strip（上次是贴边关闭的），重新吸附
+  // 注意：不能用 edgeDetectSide()，因为贴边窗口坐标在屏幕外数百像素
   if (!edge.side && mainWindow && !mainWindow.isDestroyed()) {
-    const side = edgeDetectSide();
-    if (side) {
-      const d = edgeDisplay();
-      if (d) {
-        const wa = d.workArea, b = mainWindow.getBounds();
-        const barely = side === 'left' ? b.x + b.width - wa.x <= EDGE_STRIP + 3
-                     : side === 'right' ? wa.x + wa.width - b.x <= EDGE_STRIP + 3
-                     : b.y + b.height - wa.y <= EDGE_STRIP + 3;
-        if (barely) edgeDo(side);
+    const d = edgeDisplay();
+    if (d) {
+      const wa = d.workArea, b = mainWindow.getBounds();
+      // 直接检查窗口可见 strip 在哪个边缘（不依赖 edgeDetectSide）
+      const onLeft  = b.x + b.width >= wa.x && b.x + b.width <= wa.x + EDGE_STRIP + 3;
+      const onRight = b.x >= wa.x + wa.width - EDGE_STRIP - 3 && b.x < wa.x + wa.width;
+      const onTop   = b.y + b.height >= wa.y && b.y + b.height <= wa.y + EDGE_STRIP + 3;
+      const side = onLeft ? 'left' : onRight ? 'right' : onTop ? 'top' : null;
+      if (side) {
+        // 窗口从贴边位置启动：expandBounds 应设为窗口全显位置（而非当前贴边位置）
+        const expandBounds = side === 'left'  ? { x: wa.x, y: b.y, width: b.width, height: b.height }
+                           : side === 'right' ? { x: wa.x + wa.width - b.width, y: b.y, width: b.width, height: b.height }
+                           : { x: b.x, y: wa.y, width: b.width, height: b.height };
+        edgeDo(side, expandBounds);
       }
     }
   }
