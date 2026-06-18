@@ -456,28 +456,6 @@ let persistBoundsTimer = null;
 let floatingBubbleAutoCollapseTimer = null;
 const floatingBubbleState = { collapsed: false, side: null, collapsedBounds: null, expandedBounds: null, suppressNextCollapse: false, contentSize: null };
 
-// 贴边隐藏（类似QQ）
-const EDGE_DOCK_STRIP_PX = 5;       // 隐藏后露出的像素
-const EDGE_DOCK_TRIGGER_ZONE = 50;  // 距边缘多少像素内触发吸附
-const EDGE_DOCK_HOVER_ZONE = 20;    // 距边缘多少像素内触发滑出
-const EDGE_DOCK_HIDE_DELAY_MS = 600; // 鼠标离开后等待多久隐藏
-const EDGE_DOCK_POLL_MS = 40;       // 鼠标轮询间隔
-const EDGE_DOCK_ANIM_STEPS = 12;    // 动画步数
-const EDGE_DOCK_ANIM_STEP_MS = 8;   // 每步间隔
-const edgeDockState = {
-  enabled: false,
-  docked: false,
-  side: null,        // 'left' | 'right' | 'top'
-  expandedBounds: null,
-  dockedBounds: null,
-  monitorTimer: null,
-  hideTimer: null,
-  animating: false,
-  animTimer: null,
-  dockTargetX: null,
-  dockTargetY: null
-};
-let edgeDockSuppressCheck = false; // 防止 setBounds 触发 moved 事件导致的循环
 let mainWindowChrome = { collapsedFloatingBubble: false };
 
 function stopPersistBoundsTimer() {
@@ -524,7 +502,7 @@ function sendFloatingBubbleState() {
 
 function sendEdgeDockState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  try { mainWindow.webContents.send('edgeDock:state', { side: edgeDockState.side }); } catch (_) {}
+  try { mainWindow.webContents.send('edgeDock:state', { side: edge.side }); } catch (_) {}
 }
 
 function stopFloatingBubbleAutoCollapseTimer() {
@@ -741,7 +719,6 @@ function persistBoundsSoon() {
       settings.windowBounds = next;
     }
     saveSettings();
-    edgeDockAfterMove();
   }, 400);
 }
 
@@ -764,204 +741,206 @@ function adjustZoom(delta) {
 
 // ── 贴边隐藏（类似QQ） ─────────────────────────────────────────
 
-function edgeDockDisplay() {
+const EDGE_STRIP = 5;           // 隐藏后露出的像素
+const EDGE_TRIGGER = 50;        // 触发吸附的距离
+const EDGE_HOVER = 20;          // 触发滑出的距离
+const EDGE_HIDE_DELAY = 600;    // 鼠标离开后隐藏延迟(ms)
+const EDGE_POLL_MS = 40;        // 鼠标轮询间隔
+const EDGE_ANIM_STEPS = 12;     // 动画步数
+const EDGE_ANIM_STEP_MS = 8;    // 每步间隔
+
+const edge = {
+  enabled: false,
+  side: null,        // null | 'left' | 'right' | 'top'
+  expanded: null,    // { x, y, w, h } 展开时的窗口位置
+  docked: null,      // { x, y, w, h } 贴边时的窗口位置
+  monitor: null,     // setInterval 句柄
+  hideTimer: null,   // setTimeout 句柄
+  animating: false,
+  animTimer: null,
+};
+
+function edgeDisplay() {
   if (!mainWindow || mainWindow.isDestroyed()) return null;
-  const bounds = mainWindow.getBounds();
-  try { return screen.getDisplayMatching({ x: bounds.x, y: bounds.y, width: bounds.width || 1, height: bounds.height || 1 }); }
+  const b = mainWindow.getBounds();
+  try { return screen.getDisplayMatching({ x: b.x, y: b.y, width: b.width || 1, height: b.height || 1 }); }
   catch (_) { return null; }
 }
 
-function edgeDockNearEdge() {
-  const display = edgeDockDisplay();
-  if (!display) return null;
-  const wa = display.workArea;
-  const bounds = mainWindow.getBounds();
-  const distLeft = Math.abs(bounds.x - wa.x);
-  const distRight = Math.abs((bounds.x + bounds.width) - (wa.x + wa.width));
-  const distTop = Math.abs(bounds.y - wa.y);
-  if (distLeft < EDGE_DOCK_TRIGGER_ZONE) return 'left';
-  if (distRight < EDGE_DOCK_TRIGGER_ZONE) return 'right';
-  if (distTop < EDGE_DOCK_TRIGGER_ZONE) return 'top';
+function edgeDetectSide() {
+  const d = edgeDisplay();
+  if (!d) return null;
+  const wa = d.workArea, b = mainWindow.getBounds();
+  if (Math.abs(b.x - wa.x) < EDGE_TRIGGER) return 'left';
+  if (Math.abs(b.x + b.width - wa.x - wa.width) < EDGE_TRIGGER) return 'right';
+  if (Math.abs(b.y - wa.y) < EDGE_TRIGGER) return 'top';
   return null;
 }
 
-function edgeDockDo(side) {
+function edgeIsBarelyVisible() {
+  const d = edgeDisplay();
+  if (!d) return false;
+  const wa = d.workArea, b = mainWindow.getBounds();
+  if (edge.side === 'left') return b.x + b.width - wa.x <= EDGE_STRIP + 3;
+  if (edge.side === 'right') return wa.x + wa.width - b.x <= EDGE_STRIP + 3;
+  if (edge.side === 'top') return b.y + b.height - wa.y <= EDGE_STRIP + 3;
+  return false;
+}
+
+function edgeDockBounds(side) {
+  const d = edgeDisplay();
+  if (!d) return null;
+  const wa = d.workArea, b = mainWindow.getBounds();
+  if (side === 'left')  return { x: wa.x - b.width + EDGE_STRIP, y: b.y, width: b.width, height: b.height };
+  if (side === 'right') return { x: wa.x + wa.width - EDGE_STRIP, y: b.y, width: b.width, height: b.height };
+  if (side === 'top')   return { x: b.x, y: wa.y - b.height + EDGE_STRIP, width: b.width, height: b.height };
+  return null;
+}
+
+function edgeDo(side) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const display = edgeDockDisplay();
-  if (!display) return;
-  const wa = display.workArea;
-  const bounds = mainWindow.getBounds();
-  const expanded = { ...bounds };
-  let dockedBounds;
-  if (side === 'left') {
-    dockedBounds = { x: wa.x - bounds.width + EDGE_DOCK_STRIP_PX, y: bounds.y, width: bounds.width, height: bounds.height };
-  } else if (side === 'right') {
-    dockedBounds = { x: wa.x + wa.width - EDGE_DOCK_STRIP_PX, y: bounds.y, width: bounds.width, height: bounds.height };
-  } else { // top
-    dockedBounds = { x: bounds.x, y: wa.y - bounds.height + EDGE_DOCK_STRIP_PX, width: bounds.width, height: bounds.height };
-  }
-  edgeDockState.docked = true;
-  edgeDockState.side = side;
-  edgeDockState.expandedBounds = expanded;
-  edgeDockState.dockedBounds = dockedBounds;
-  edgeDockState.dockTargetX = dockedBounds.x;
-  edgeDockState.dockTargetY = dockedBounds.y;
-  edgeDockSuppressCheck = true;
-  mainWindow.setBounds(dockedBounds);
-  setTimeout(() => { edgeDockSuppressCheck = false; }, 1000);
-  startEdgeDockMonitor();
+  const db = edgeDockBounds(side);
+  if (!db) return;
+  edge.side = side;
+  edge.expanded = { ...mainWindow.getBounds() };
+  edge.docked = db;
+  // 用 setBounds 前移开检测标记，下个 event loop 恢复
+  edgeSuppress();
+  mainWindow.setBounds(db);
+  edgeStartMonitor();
   sendEdgeDockState();
 }
 
-function edgeDockUndock() {
-  stopEdgeDockMonitor();
-  if (edgeDockState.animTimer) { clearInterval(edgeDockState.animTimer); edgeDockState.animTimer = null; }
-  edgeDockState.animating = false;
-  edgeDockState.docked = false;
-  edgeDockState.side = null;
-  edgeDockState.expandedBounds = null;
-  edgeDockState.dockedBounds = null;
+function edgeUndo() {
+  edgeStopMonitor();
+  if (edge.animTimer) { clearInterval(edge.animTimer); edge.animTimer = null; }
+  edge.animating = false;
+  edge.side = null;
+  edge.expanded = null;
+  edge.docked = null;
   sendEdgeDockState();
 }
 
-function edgeDockCheck() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.enabled || edgeDockState.docked) return;
-  if (floatingBubbleState.collapsed) return;
-  const side = edgeDockNearEdge();
-  if (side) edgeDockDo(side);
+function edgeSuppress() {
+  // 在下一个 macrotask 恢复检测（等所有 setBounds 触发的事件处理完）
+  edgeSuppress._once = edgeSuppress._once || (() => { edgeSuppress._active = false; });
+  edgeSuppress._active = true;
+  // 用 queueMicrotask 替代 setTimeout，尽快恢复检测
+  Promise.resolve().then(() => { setTimeout(() => { edgeSuppress._active = false; }, 0); });
 }
 
-function edgeDockExpand() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked || edgeDockState.animating) return;
-  const target = edgeDockState.expandedBounds;
-  if (!target) return;
-  const isHorizontal = edgeDockState.side === 'left' || edgeDockState.side === 'right';
-  edgeDockSlideTo(isHorizontal ? target.x : target.y, isHorizontal);
+function edgeAfterUserMove() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edge.enabled || edgeSuppress._active) return;
+  if (edge.side) edgeUndo();     // 用户拖动了贴边的窗口 → 解除
+  const side = edgeDetectSide(); // 检测是否靠近边缘
+  if (side) edgeDo(side);
 }
 
-function edgeDockSlideTo(targetPos, horizontal = true) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const bounds = mainWindow.getBounds();
-  const currentKey = horizontal ? 'dockTargetX' : 'dockTargetY';
-  if (edgeDockState[currentKey] === targetPos) return;
-  edgeDockState.animating = true;
-  edgeDockState[currentKey] = targetPos;
-  edgeDockSuppressCheck = true;
-  const startPos = horizontal ? bounds.x : bounds.y;
-  const dp = (targetPos - startPos) / EDGE_DOCK_ANIM_STEPS;
-  let step = 0;
-  edgeDockState.animTimer = setInterval(() => {
-    step++;
-    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(edgeDockState.animTimer); edgeDockState.animTimer = null; return; }
-    const current = mainWindow.getBounds();
-    const nextPos = Math.round(startPos + dp * step);
-    if (step >= EDGE_DOCK_ANIM_STEPS) {
-      if (horizontal) current.x = targetPos; else current.y = targetPos;
-    } else {
-      if (horizontal) current.x = nextPos; else current.y = nextPos;
-    }
-    mainWindow.setBounds(current);
-    if (step >= EDGE_DOCK_ANIM_STEPS) {
-      clearInterval(edgeDockState.animTimer);
-      edgeDockState.animTimer = null;
-      edgeDockState.animating = false;
-      setTimeout(() => { edgeDockSuppressCheck = false; }, 1000);
-    }
-  }, EDGE_DOCK_ANIM_STEP_MS);
-}
-
-function edgeDockCollapse() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked || edgeDockState.animating) return;
-  const target = edgeDockState.dockedBounds;
-  if (!target) return;
-  const isHorizontal = edgeDockState.side === 'left' || edgeDockState.side === 'right';
-  edgeDockSlideTo(isHorizontal ? target.x : target.y, isHorizontal);
-}
-
-function startEdgeDockMonitor() {
-  stopEdgeDockMonitor();
-  edgeDockState.monitorTimer = setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked) { stopEdgeDockMonitor(); return; }
+function edgeStartMonitor() {
+  edgeStopMonitor();
+  edge.monitor = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || !edge.side) { edgeStopMonitor(); return; }
     try {
-      const pt = screen.getCursorScreenPoint();
-      const bounds = mainWindow.getBounds();
-      const display = edgeDockDisplay();
-      if (!display) return;
-      const wa = display.workArea;
-      let nearEdge = false;
-      if (edgeDockState.side === 'left') {
-        nearEdge = pt.x >= wa.x && pt.x <= wa.x + EDGE_DOCK_HOVER_ZONE && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
-      } else if (edgeDockState.side === 'right') {
-        nearEdge = pt.x >= wa.x + wa.width - EDGE_DOCK_HOVER_ZONE && pt.x <= wa.x + wa.width && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
-      } else if (edgeDockState.side === 'top') {
-        nearEdge = pt.y >= wa.y && pt.y <= wa.y + EDGE_DOCK_HOVER_ZONE && pt.x >= bounds.x && pt.x <= bounds.x + bounds.width;
-      }
-      if (nearEdge) {
-        if (edgeDockState.hideTimer) { clearTimeout(edgeDockState.hideTimer); edgeDockState.hideTimer = null; }
-        const atDock = edgeDockState.docked && !edgeDockState.animating;
-        if (atDock && (edgeDockState.side === 'top'
-          ? Math.abs(bounds.y - edgeDockState.dockedBounds?.y) < 3
-          : Math.abs(bounds.x - edgeDockState.dockedBounds?.x) < 3)) edgeDockExpand();
+      const pt = screen.getCursorScreenPoint(), b = mainWindow.getBounds(), d = edgeDisplay();
+      if (!d) return;
+      const wa = d.workArea;
+      let hover = false;
+      if (edge.side === 'left')  hover = pt.x - wa.x < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height;
+      if (edge.side === 'right') hover = wa.x + wa.width - pt.x < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height;
+      if (edge.side === 'top')   hover = pt.y - wa.y < EDGE_HOVER && pt.x >= b.x && pt.x <= b.x + b.width;
+      if (hover) {
+        if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
+        // 检查窗口是否在贴边位置（还未展开）
+        const atDock = edge.side === 'top'
+          ? Math.abs(b.y - edge.docked.y) < 3
+          : Math.abs(b.x - edge.docked.x) < 3;
+        if (atDock && !edge.animating) edgeExpand();
       } else {
-        const atExpand = edgeDockState.docked && !edgeDockState.animating && !edgeDockState.hideTimer;
-        const nearExpand = edgeDockState.side === 'top'
-          ? Math.abs(bounds.y - edgeDockState.expandedBounds?.y) < 5
-          : Math.abs(bounds.x - edgeDockState.expandedBounds?.x) < 5;
+        // 检查窗口是否在展开位置 → 开始 hide 计时
+        const atExpand = !edge.animating && !edge.hideTimer;
+        const nearExpand = edge.side === 'top'
+          ? Math.abs(b.y - edge.expanded.y) < 5
+          : Math.abs(b.x - edge.expanded.x) < 5;
         if (atExpand && nearExpand) {
-          edgeDockState.hideTimer = setTimeout(() => {
-            edgeDockState.hideTimer = null;
-            edgeDockCollapse();
-          }, EDGE_DOCK_HIDE_DELAY_MS);
+          edge.hideTimer = setTimeout(() => {
+            edge.hideTimer = null;
+            edgeCollapse();
+          }, EDGE_HIDE_DELAY);
         }
       }
     } catch (_) {}
-  }, EDGE_DOCK_POLL_MS);
+  }, EDGE_POLL_MS);
 }
 
-function stopEdgeDockMonitor() {
-  if (edgeDockState.monitorTimer) { clearInterval(edgeDockState.monitorTimer); edgeDockState.monitorTimer = null; }
-  if (edgeDockState.hideTimer) { clearTimeout(edgeDockState.hideTimer); edgeDockState.hideTimer = null; }
+function edgeStopMonitor() {
+  if (edge.monitor) { clearInterval(edge.monitor); edge.monitor = null; }
+  if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
+}
+
+function edgeExpand() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edge.side || !edge.expanded || edge.animating) return;
+  const h = edge.side === 'left' || edge.side === 'right';
+  edgeSlide(h ? edge.expanded.x : edge.expanded.y, h);
+}
+
+function edgeCollapse() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edge.side || !edge.docked || edge.animating) return;
+  const h = edge.side === 'left' || edge.side === 'right';
+  edgeSlide(h ? edge.docked.x : edge.docked.y, h);
+}
+
+function edgeSlide(target, horizontal) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const b = mainWindow.getBounds();
+  const cur = horizontal ? b.x : b.y;
+  if (cur === target) return;
+  edge.animating = true;
+  const dp = (target - cur) / EDGE_ANIM_STEPS;
+  let step = 0;
+  edge.animTimer = setInterval(() => {
+    edgeSuppress._active = true;
+    step++;
+    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(edge.animTimer); edge.animTimer = null; return; }
+    const nb = mainWindow.getBounds();
+    if (step >= EDGE_ANIM_STEPS) { if (horizontal) nb.x = target; else nb.y = target; }
+    else { const p = Math.round(cur + dp * step); if (horizontal) nb.x = p; else nb.y = p; }
+    mainWindow.setBounds(nb);
+    if (step >= EDGE_ANIM_STEPS) {
+      clearInterval(edge.animTimer); edge.animTimer = null;
+      edge.animating = false;
+    }
+  }, EDGE_ANIM_STEP_MS);
 }
 
 function startEdgeDock() {
-  edgeDockState.enabled = settings.edgeDock === true;
-  if (!edgeDockState.enabled) {
-    if (edgeDockState.docked) {
-      if (edgeDockState.expandedBounds) mainWindow?.setBounds(edgeDockState.expandedBounds);
-      edgeDockUndock();
+  edge.enabled = settings.edgeDock === true;
+  if (!edge.enabled) {
+    if (edge.side) {
+      if (edge.expanded) mainWindow?.setBounds(edge.expanded);
+      edgeUndo();
     } else {
-      stopEdgeDockMonitor();
+      edgeStopMonitor();
     }
     return;
   }
-  // 启动时检测：如果窗口处于贴边位置（仅 5px 可见），重新吸附以启动监测器
-  if (!edgeDockState.docked && mainWindow && !mainWindow.isDestroyed()) {
-    const side = edgeDockNearEdge();
+  // 重启检测：如果上次关闭时处于贴边位置（仅 strip 可见），重新吸附
+  if (!edge.side && mainWindow && !mainWindow.isDestroyed()) {
+    const side = edgeDetectSide();
     if (side) {
-      const bounds = mainWindow.getBounds();
-      const display = edgeDockDisplay();
-      if (display) {
-        const wa = display.workArea;
-        const barelyVisible = side === 'left'
-          ? (bounds.x + bounds.width - wa.x) <= EDGE_DOCK_STRIP_PX + 3
-          : side === 'right'
-            ? (wa.x + wa.width - bounds.x) <= EDGE_DOCK_STRIP_PX + 3
-            : (bounds.y + bounds.height - wa.y) <= EDGE_DOCK_STRIP_PX + 3;
-        if (barelyVisible) {
-          edgeDockDo(side);
-        }
-      }
+      // 先假设是这个方向，检测是否几乎不可见
+      edge.side = side;
+      const barely = edgeIsBarelyVisible();
+      edge.side = null;
+      if (barely) edgeDo(side);
     }
   }
 }
 
-function edgeDockAfterMove() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.enabled || edgeDockSuppressCheck) return;
-  if (edgeDockState.docked) {
-    edgeDockUndock();
-  }
-  edgeDockCheck();
-}
+// 供 moved 事件调用的入口 —— 必须与 setBounds 解耦
+const edgeMoveCheck = () => {
+  if (edgeSuppress._active) { edgeSuppress._active = false; return; }
+  edgeAfterUserMove();
+};
 
 function readSettings() {
   settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -2144,7 +2123,10 @@ function createWindow(boundsOverride, options = {}) {
     else if (!quitRequested) scheduleFloatingBubbleAutoCollapse();
   });
   win.on('resized', persistBoundsSoon);
-  win.on('moved', persistBoundsSoon);
+  win.on('moved', () => {
+    persistBoundsSoon();
+    edgeMoveCheck();
+  });
   win.on('close', (event) => {
     if (quitRequested) return;
     const action = mainWindowCloseAction(settings, { platform: process.platform });
