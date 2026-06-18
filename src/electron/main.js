@@ -808,7 +808,7 @@ function edgeDockDo(side) {
   edgeDockState.dockTargetY = dockedBounds.y;
   edgeDockSuppressCheck = true;
   mainWindow.setBounds(dockedBounds);
-  setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
+  setTimeout(() => { edgeDockSuppressCheck = false; }, 1000);
   startEdgeDockMonitor();
   sendEdgeDockState();
 }
@@ -865,7 +865,7 @@ function edgeDockSlideTo(targetPos, horizontal = true) {
       clearInterval(edgeDockState.animTimer);
       edgeDockState.animTimer = null;
       edgeDockState.animating = false;
-      setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
+      setTimeout(() => { edgeDockSuppressCheck = false; }, 1000);
     }
   }, EDGE_DOCK_ANIM_STEP_MS);
 }
@@ -900,8 +900,8 @@ function startEdgeDockMonitor() {
         if (edgeDockState.hideTimer) { clearTimeout(edgeDockState.hideTimer); edgeDockState.hideTimer = null; }
         const atDock = edgeDockState.docked && !edgeDockState.animating;
         if (atDock && (edgeDockState.side === 'top'
-          ? bounds.y === edgeDockState.dockedBounds?.y
-          : bounds.x === edgeDockState.dockedBounds?.x)) edgeDockExpand();
+          ? Math.abs(bounds.y - edgeDockState.dockedBounds?.y) < 3
+          : Math.abs(bounds.x - edgeDockState.dockedBounds?.x) < 3)) edgeDockExpand();
       } else {
         const atExpand = edgeDockState.docked && !edgeDockState.animating && !edgeDockState.hideTimer;
         const nearExpand = edgeDockState.side === 'top'
