@@ -1691,6 +1691,7 @@ function render() {
 
 function setStatus(text, isError = false) {
   els.status.textContent = text;
+  els.status.classList.toggle('loading', !isError && text !== 'Live' && text !== 'Local');
   els.status.classList.toggle('error', isError);
 }
 

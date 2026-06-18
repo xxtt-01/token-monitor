@@ -253,7 +253,13 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   35%  { box-shadow: 0 0 9px rgba(var(--accent-rgb), 0.95); }
   100% { box-shadow: 0 0 4px rgba(var(--accent-rgb), 0.55); }
 }
-.status { display: none; margin-top: 4px; color: var(--muted); font-size: 11px; }
+.status { margin-top: 4px; font-size: 12px; transition: opacity 0.3s; font-weight: 500; }
+.status.loading { color: var(--accent-color, #73bdf5); animation: statusPulse 1.5s ease-in-out infinite; }
+.status.error { color: var(--danger-color, #e74c3c); }
+@keyframes statusPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
 .status.error { display: block; }
 .title-controls {
   -webkit-app-region: no-drag;
