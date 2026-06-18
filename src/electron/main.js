@@ -473,6 +473,7 @@ const edgeDockState = {
   monitorTimer: null,
   hideTimer: null,
   animating: false,
+  animTimer: null,
   dockTargetX: null,
   dockTargetY: null
 };
@@ -814,6 +815,8 @@ function edgeDockDo(side) {
 
 function edgeDockUndock() {
   stopEdgeDockMonitor();
+  if (edgeDockState.animTimer) { clearInterval(edgeDockState.animTimer); edgeDockState.animTimer = null; }
+  edgeDockState.animating = false;
   edgeDockState.docked = false;
   edgeDockState.side = null;
   edgeDockState.expandedBounds = null;
@@ -847,9 +850,9 @@ function edgeDockSlideTo(targetPos, horizontal = true) {
   const startPos = horizontal ? bounds.x : bounds.y;
   const dp = (targetPos - startPos) / EDGE_DOCK_ANIM_STEPS;
   let step = 0;
-  const timer = setInterval(() => {
+  edgeDockState.animTimer = setInterval(() => {
     step++;
-    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(timer); return; }
+    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(edgeDockState.animTimer); edgeDockState.animTimer = null; return; }
     const current = mainWindow.getBounds();
     const nextPos = Math.round(startPos + dp * step);
     if (step >= EDGE_DOCK_ANIM_STEPS) {
@@ -859,7 +862,8 @@ function edgeDockSlideTo(targetPos, horizontal = true) {
     }
     mainWindow.setBounds(current);
     if (step >= EDGE_DOCK_ANIM_STEPS) {
-      clearInterval(timer);
+      clearInterval(edgeDockState.animTimer);
+      edgeDockState.animTimer = null;
       edgeDockState.animating = false;
       setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
     }
