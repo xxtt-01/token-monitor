@@ -217,3 +217,15 @@
   - 设置项 `edgeDock`（默认关闭），位于 Window 设置面板
   - 窗口移动结束后自动检测是否靠近边缘，靠近则吸附
 - **影响范围:** 窗口交互行为（仅开启时生效）
+
+## 2026-06-18 15:00: 修复贴边隐藏的无限吸附/解除循环 + 中文化选项
+- **文件:**
+  - `src/electron/main.js`
+  - `src/electron/renderer/index.html`
+- **原因:** edgeDockDo 调用 setBounds 触发 moved 事件 → persistBoundsSoon → edgeDockAfterMove → undock → edgeDockCheck → 再次 dock → 无限循环。且 expandedBounds 被清空导致悬停展开失效
+- **根因:** setBounds 触发的 moved 事件无法与用户拖拽区分，导致 dock/undock 循环
+- **决策:** 
+  - 新增 `edgeDockSuppressCheck` 标志，setBounds 前设为 true，200ms 后清除
+  - 动画过程中也设置该标志
+  - 选项改为中文"贴边隐藏 — 拖到屏幕边缘自动吸附隐藏"
+- **影响范围:** 贴边隐藏功能稳定性

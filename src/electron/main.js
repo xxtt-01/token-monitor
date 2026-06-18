@@ -475,6 +475,7 @@ const edgeDockState = {
   animating: false,
   dockTargetX: null
 };
+let edgeDockSuppressCheck = false; // 防止 setBounds 触发 moved 事件导致的循环
 let mainWindowChrome = { collapsedFloatingBubble: false };
 
 function stopPersistBoundsTimer() {
@@ -793,7 +794,9 @@ function edgeDockDo(side) {
   edgeDockState.expandedBounds = expanded;
   edgeDockState.dockedBounds = dockedBounds;
   edgeDockState.dockTargetX = dockedBounds.x;
+  edgeDockSuppressCheck = true;
   mainWindow.setBounds(dockedBounds);
+  setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
   startEdgeDockMonitor();
 }
 
@@ -825,6 +828,7 @@ function edgeDockSlideTo(targetX) {
   if (edgeDockState.dockTargetX === targetX) return;
   edgeDockState.animating = true;
   edgeDockState.dockTargetX = targetX;
+  edgeDockSuppressCheck = true;
   const startX = bounds.x;
   const dx = (targetX - startX) / EDGE_DOCK_ANIM_STEPS;
   let step = 0;
@@ -838,6 +842,7 @@ function edgeDockSlideTo(targetX) {
     if (step >= EDGE_DOCK_ANIM_STEPS) {
       clearInterval(timer);
       edgeDockState.animating = false;
+      setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
     }
   }, EDGE_DOCK_ANIM_STEP_MS);
 }
@@ -901,7 +906,7 @@ function startEdgeDock() {
 }
 
 function edgeDockAfterMove() {
-  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.enabled) return;
+  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.enabled || edgeDockSuppressCheck) return;
   if (edgeDockState.docked) {
     edgeDockUndock();
   }
