@@ -2076,12 +2076,16 @@ function loadWindowFile(target, options = {}) {
     // async stats fetch resolves; revealing on load would flash empty content.
     // Wait until the renderer reports it has rendered real data instead.
     ipcMain.on('window:contentReady', onContentReady);
-    target.webContents.once('did-finish-load', () => applyZoomFactor(target));
+    target.webContents.once('did-finish-load', () => {
+      applyZoomFactor(target);
+      sendEdgeDockState();
+    });
   } else {
     target.once('ready-to-show', reveal);
     target.webContents.once('did-finish-load', () => {
       applyZoomFactor(target);
       reveal();
+      sendEdgeDockState();
     });
   }
   target.webContents.once('did-fail-load', (_event, code, description) => {

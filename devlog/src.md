@@ -279,5 +279,10 @@
 - **原因/决策:**
   1. **Windows 分屏干扰（Aero Snap）：** 拖到边缘时 Windows 分屏布局覆盖，窗口变成半屏。在 `move` 事件中检测边缘临近后立即 `setResizable(false)` 阻止 Snap，`edgeDo` 中确认禁用，`edgeUndo` 和动画完成后恢复
   2. **展开不全：** 用户拖到边缘触发吸附时 `expandBounds` 直接沿用拖拽释放位置（可能离边缘还有几像素~几十像素），展开后部分窗口仍在屏幕外。`edgeDo` 计算 `expandBounds` 时修正到与 `workArea` 边缘齐平（左贴边 `x: wa.x`，右贴边 `x: wa.x + wa.width - b.width`）
-  3. **光效不够炫酷：** 改为 4px 宽 + 三色渐变（青→蓝→紫→蓝→青）+ 流光扫描动画（background-position 3s 循环）+ 霓虹辉光（drop-shadow）+ 外发光 box-shadow，两层动画叠加
+  3. **光效不够炫酷且不显示：** 旧版用了 `filter: drop-shadow()` 和 `filter: brightness()`，在 Electron/Chromium 中 `filter` 会创建新层叠上下文，可能导致伪元素不渲染。且旧版忽略了 IPC 时序问题：`sendEdgeDockState` 在 `applyWindowSettings` 中调用时渲染进程可能还没注册好监听器，body 类名从未被加上。
+- **决策:**
+  - 去掉 `filter`，改用 `box-shadow` 做辉光效果
+  - 流光扫描（渐变位置 4s 循环）+ 呼吸脉冲（opacity + box-shadow 2.5s）
+  - 恢复 5px 宽度
+  - `did-finish-load` 时重新 `sendEdgeDockState()`，确保渲染进程监听器就绪
 - **影响范围:** 贴边隐藏功能
