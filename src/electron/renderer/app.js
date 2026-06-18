@@ -3686,6 +3686,11 @@ window.tokenMonitor.onFloatingBubbleState?.((payload) => {
   applyFloatingBubbleState(payload);
 });
 
+window.tokenMonitor.onEdgeDockState?.((payload) => {
+  for (const cls of ['edge-dock-left', 'edge-dock-right', 'edge-dock-top']) document.body.classList.remove(cls);
+  if (payload?.side) document.body.classList.add('edge-dock-' + payload.side);
+});
+
 window.tokenMonitor.onHubPush?.((payload) => {
   if (!payload?.info) return;
   state.hubInfo = payload.info;

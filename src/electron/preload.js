@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld('tokenMonitor', {
     ipcRenderer.on('floatingBubble:state', listener);
     return () => ipcRenderer.removeListener('floatingBubble:state', listener);
   },
+  onEdgeDockState: (callback) => {
+    const listener = (_event, payload) => { try { callback(payload); } catch (_) {} };
+    ipcRenderer.on('edgeDock:state', listener);
+    return () => ipcRenderer.removeListener('edgeDock:state', listener);
+  },
   onAppUpdatePush: (callback) => {
     const listener = (_event, payload) => { try { callback(payload); } catch (_) {} };
     ipcRenderer.on('appUpdate:push', listener);

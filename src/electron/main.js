@@ -521,6 +521,11 @@ function sendFloatingBubbleState() {
   try { mainWindow.webContents.send('floatingBubble:state', floatingBubblePayload()); } catch (_) {}
 }
 
+function sendEdgeDockState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.webContents.send('edgeDock:state', { side: edgeDockState.side }); } catch (_) {}
+}
+
 function stopFloatingBubbleAutoCollapseTimer() {
   if (floatingBubbleAutoCollapseTimer) clearTimeout(floatingBubbleAutoCollapseTimer);
   floatingBubbleAutoCollapseTimer = null;
@@ -804,6 +809,7 @@ function edgeDockDo(side) {
   mainWindow.setBounds(dockedBounds);
   setTimeout(() => { edgeDockSuppressCheck = false; }, 200);
   startEdgeDockMonitor();
+  sendEdgeDockState();
 }
 
 function edgeDockUndock() {
@@ -812,6 +818,7 @@ function edgeDockUndock() {
   edgeDockState.side = null;
   edgeDockState.expandedBounds = null;
   edgeDockState.dockedBounds = null;
+  sendEdgeDockState();
 }
 
 function edgeDockCheck() {

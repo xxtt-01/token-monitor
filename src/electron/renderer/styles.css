@@ -2431,3 +2431,48 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   font-variant-numeric: tabular-nums;
   transition: color 0.3s;
 }
+
+/* 贴边隐藏光效 */
+@keyframes edge-glow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+body.edge-dock-left::after {
+  content: '';
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: linear-gradient(180deg, rgba(64, 180, 255, 0.6), rgba(120, 80, 255, 0.6));
+  animation: edge-glow-pulse 2s ease-in-out infinite;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+body.edge-dock-right::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: linear-gradient(180deg, rgba(64, 180, 255, 0.6), rgba(120, 80, 255, 0.6));
+  animation: edge-glow-pulse 2s ease-in-out infinite;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+body.edge-dock-top::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: linear-gradient(90deg, rgba(64, 180, 255, 0.6), rgba(120, 80, 255, 0.6));
+  animation: edge-glow-pulse 2s ease-in-out infinite;
+  z-index: 9999;
+  pointer-events: none;
+}
