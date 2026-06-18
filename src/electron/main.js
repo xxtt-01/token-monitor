@@ -178,6 +178,7 @@ function defaultSettings() {
     showActiveAccount: parseBoolean(process.env.TOKEN_MONITOR_SHOW_ACTIVE_ACCOUNT, false),
     windowBounds: null,
     zoomFactor: 1,
+    edgeDock: false,
     showTrayIcon: true,
     trayMode: false,
     trayContent: 'tokens',
@@ -454,6 +455,26 @@ function restoredBounds() {
 let persistBoundsTimer = null;
 let floatingBubbleAutoCollapseTimer = null;
 const floatingBubbleState = { collapsed: false, side: null, collapsedBounds: null, expandedBounds: null, suppressNextCollapse: false, contentSize: null };
+
+// 贴边隐藏（类似QQ）
+const EDGE_DOCK_STRIP_PX = 5;       // 隐藏后露出的像素
+const EDGE_DOCK_TRIGGER_ZONE = 50;  // 距边缘多少像素内触发吸附
+const EDGE_DOCK_HOVER_ZONE = 20;    // 距边缘多少像素内触发滑出
+const EDGE_DOCK_HIDE_DELAY_MS = 600; // 鼠标离开后等待多久隐藏
+const EDGE_DOCK_POLL_MS = 40;       // 鼠标轮询间隔
+const EDGE_DOCK_ANIM_STEPS = 12;    // 动画步数
+const EDGE_DOCK_ANIM_STEP_MS = 8;   // 每步间隔
+const edgeDockState = {
+  enabled: false,
+  docked: false,
+  side: null,        // 'left' | 'right'
+  expandedBounds: null,
+  dockedBounds: null,
+  monitorTimer: null,
+  hideTimer: null,
+  animating: false,
+  dockTargetX: null
+};
 let mainWindowChrome = { collapsedFloatingBubble: false };
 
 function stopPersistBoundsTimer() {
@@ -712,6 +733,7 @@ function persistBoundsSoon() {
       settings.windowBounds = next;
     }
     saveSettings();
+    edgeDockAfterMove();
   }, 400);
 }
 
@@ -730,6 +752,160 @@ function setZoomFactor(value) {
 
 function adjustZoom(delta) {
   setZoomFactor(clampZoom(settings.zoomFactor) + delta);
+}
+
+// ── 贴边隐藏（类似QQ） ─────────────────────────────────────────
+
+function edgeDockDisplay() {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  const bounds = mainWindow.getBounds();
+  try { return screen.getDisplayMatching({ x: bounds.x, y: bounds.y, width: bounds.width || 1, height: bounds.height || 1 }); }
+  catch (_) { return null; }
+}
+
+function edgeDockNearEdge() {
+  const display = edgeDockDisplay();
+  if (!display) return null;
+  const wa = display.workArea;
+  const bounds = mainWindow.getBounds();
+  const distLeft = Math.abs(bounds.x - wa.x);
+  const distRight = Math.abs((bounds.x + bounds.width) - (wa.x + wa.width));
+  if (distLeft < EDGE_DOCK_TRIGGER_ZONE) return 'left';
+  if (distRight < EDGE_DOCK_TRIGGER_ZONE) return 'right';
+  return null;
+}
+
+function edgeDockDo(side) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const display = edgeDockDisplay();
+  if (!display) return;
+  const wa = display.workArea;
+  const bounds = mainWindow.getBounds();
+  const expanded = { ...bounds };
+  let dockedBounds;
+  if (side === 'left') {
+    dockedBounds = { x: wa.x - bounds.width + EDGE_DOCK_STRIP_PX, y: bounds.y, width: bounds.width, height: bounds.height };
+  } else {
+    dockedBounds = { x: wa.x + wa.width - EDGE_DOCK_STRIP_PX, y: bounds.y, width: bounds.width, height: bounds.height };
+  }
+  edgeDockState.docked = true;
+  edgeDockState.side = side;
+  edgeDockState.expandedBounds = expanded;
+  edgeDockState.dockedBounds = dockedBounds;
+  edgeDockState.dockTargetX = dockedBounds.x;
+  mainWindow.setBounds(dockedBounds);
+  startEdgeDockMonitor();
+}
+
+function edgeDockUndock() {
+  stopEdgeDockMonitor();
+  edgeDockState.docked = false;
+  edgeDockState.side = null;
+  edgeDockState.expandedBounds = null;
+  edgeDockState.dockedBounds = null;
+}
+
+function edgeDockCheck() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.enabled || edgeDockState.docked) return;
+  if (floatingBubbleState.collapsed) return;
+  const side = edgeDockNearEdge();
+  if (side) edgeDockDo(side);
+}
+
+function edgeDockExpand() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked || edgeDockState.animating) return;
+  const target = edgeDockState.expandedBounds;
+  if (!target) return;
+  edgeDockSlideTo(target.x);
+}
+
+function edgeDockSlideTo(targetX) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const bounds = mainWindow.getBounds();
+  if (edgeDockState.dockTargetX === targetX) return;
+  edgeDockState.animating = true;
+  edgeDockState.dockTargetX = targetX;
+  const startX = bounds.x;
+  const dx = (targetX - startX) / EDGE_DOCK_ANIM_STEPS;
+  let step = 0;
+  const timer = setInterval(() => {
+    step++;
+    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(timer); return; }
+    const current = mainWindow.getBounds();
+    current.x = Math.round(startX + dx * step);
+    if (step >= EDGE_DOCK_ANIM_STEPS) current.x = targetX;
+    mainWindow.setBounds(current);
+    if (step >= EDGE_DOCK_ANIM_STEPS) {
+      clearInterval(timer);
+      edgeDockState.animating = false;
+    }
+  }, EDGE_DOCK_ANIM_STEP_MS);
+}
+
+function edgeDockCollapse() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked || edgeDockState.animating) return;
+  const target = edgeDockState.dockedBounds;
+  if (!target) return;
+  edgeDockSlideTo(target.x);
+}
+
+function startEdgeDockMonitor() {
+  stopEdgeDockMonitor();
+  edgeDockState.monitorTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.docked) { stopEdgeDockMonitor(); return; }
+    try {
+      const pt = screen.getCursorScreenPoint();
+      const bounds = mainWindow.getBounds();
+      const display = edgeDockDisplay();
+      if (!display) return;
+      const wa = display.workArea;
+      let nearEdge = false;
+      if (edgeDockState.side === 'left') {
+        nearEdge = pt.x >= wa.x && pt.x <= wa.x + EDGE_DOCK_HOVER_ZONE && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
+      } else if (edgeDockState.side === 'right') {
+        nearEdge = pt.x >= wa.x + wa.width - EDGE_DOCK_HOVER_ZONE && pt.x <= wa.x + wa.width && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
+      }
+      if (nearEdge) {
+        if (edgeDockState.hideTimer) { clearTimeout(edgeDockState.hideTimer); edgeDockState.hideTimer = null; }
+        const isDocked = edgeDockState.docked && !edgeDockState.animating && bounds.x === edgeDockState.dockedBounds?.x;
+        if (isDocked) edgeDockExpand();
+      } else {
+        const isExpanded = edgeDockState.docked && !edgeDockState.animating && !edgeDockState.hideTimer &&
+          Math.abs(bounds.x - edgeDockState.expandedBounds?.x) < 5;
+        if (isExpanded) {
+          edgeDockState.hideTimer = setTimeout(() => {
+            edgeDockState.hideTimer = null;
+            edgeDockCollapse();
+          }, EDGE_DOCK_HIDE_DELAY_MS);
+        }
+      }
+    } catch (_) {}
+  }, EDGE_DOCK_POLL_MS);
+}
+
+function stopEdgeDockMonitor() {
+  if (edgeDockState.monitorTimer) { clearInterval(edgeDockState.monitorTimer); edgeDockState.monitorTimer = null; }
+  if (edgeDockState.hideTimer) { clearTimeout(edgeDockState.hideTimer); edgeDockState.hideTimer = null; }
+}
+
+function startEdgeDock() {
+  edgeDockState.enabled = settings.edgeDock === true;
+  if (!edgeDockState.enabled) {
+    if (edgeDockState.docked) {
+      if (edgeDockState.expandedBounds) mainWindow?.setBounds(edgeDockState.expandedBounds);
+      edgeDockUndock();
+    } else {
+      stopEdgeDockMonitor();
+    }
+  }
+}
+
+function edgeDockAfterMove() {
+  if (!mainWindow || mainWindow.isDestroyed() || !edgeDockState.enabled) return;
+  if (edgeDockState.docked) {
+    edgeDockUndock();
+  }
+  edgeDockCheck();
 }
 
 function readSettings() {
@@ -902,6 +1078,7 @@ function applyWindowSettings() {
   if (typeof mainWindow.setFocusable === 'function') mainWindow.setFocusable(behavior.focusable);
   if (typeof mainWindow.setSkipTaskbar === 'function') mainWindow.setSkipTaskbar(Boolean(settings?.trayMode));
   if (!behavior.focusable && typeof mainWindow.blur === 'function') mainWindow.blur();
+  if (!floatingBubbleState.collapsed) startEdgeDock();
 }
 
 function nativeBlurEnabled(source = settings) {

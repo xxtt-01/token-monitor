@@ -202,3 +202,18 @@
   - 客户端/模型拆分改用 `adjustedTokens`（与 `totalTokens` 一致），消除 2x 重复
   - `limitWindowNode` 增加 `showRemaining` 参数（默认 true），OpenCode 窗口传 false 显示已用百分比和对应进度条
 - **影响范围:** 工具维度 token 数据一致性、OpenCode 额度显示方式
+
+## 2026-06-18 14:30: 新增贴边隐藏功能（类似QQ）
+- **文件:**
+  - `src/electron/main.js`
+  - `src/electron/renderer/index.html`
+  - `src/electron/renderer/app.js`
+- **原因:** 需要窗口拖到屏幕边缘自动隐藏，鼠标移上滑出的功能，类似 QQ 贴边
+- **决策:**
+  - 新增 `edgeDockState` 管理贴边状态 + EDGE_DOCK_* 常量控制参数（隐藏后露 5px、触发吸附 50px、悬停 20px）
+  - `edgeDockDo(side)` 将窗口定位到左右边缘，仅露 stripPx
+  - `edgeDockSlideTo(targetX)` 12 步动画丝滑滑入/滑出
+  - `startEdgeDockMonitor()` 40ms 轮询鼠标位置，悬停展开、离开 600ms 后隐藏
+  - 设置项 `edgeDock`（默认关闭），位于 Window 设置面板
+  - 窗口移动结束后自动检测是否靠近边缘，靠近则吸附
+- **影响范围:** 窗口交互行为（仅开启时生效）

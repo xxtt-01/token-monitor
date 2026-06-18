@@ -184,6 +184,7 @@ Object.assign(els, {
   titleIconInput: document.getElementById('titleIconInput'),
   settingsInTitlebarInput: document.getElementById('settingsInTitlebarInput'),
   goPlanFormulaInput: document.getElementById('goPlanFormulaInput'),
+  edgeDockInput: document.getElementById('edgeDockInput'),
   resetClientDisplayOrderButton: document.getElementById('resetClientDisplayOrderButton'),
   showAllClientsButton: document.getElementById('showAllClientsButton'),
   resetViewDisplayOrderButton: document.getElementById('resetViewDisplayOrderButton'),
@@ -2593,6 +2594,7 @@ function syncSettingsForm() {
   els.settingsInTitlebarInput.checked = state.settings.settingsInTitlebar === true;
   els.discordRpcInput.checked = Boolean(state.settings.discordRpcEnabled);
   if (els.goPlanFormulaInput) els.goPlanFormulaInput.checked = Boolean(state.settings.goPlanFormula);
+  if (els.edgeDockInput) els.edgeDockInput.checked = Boolean(state.settings.edgeDock);
   syncWindowBehaviorControls();
   els.floatingBubbleInput.checked = state.settings.floatingBubbleEnabled === true;
   if (els.floatingBubbleTriggerInput) els.floatingBubbleTriggerInput.value = state.settings.floatingBubbleTrigger === 'hover' ? 'hover' : 'click';
@@ -3600,6 +3602,9 @@ els.trayModeInput.addEventListener('change', () => {
   saveSettings({ trayMode: els.trayModeInput.checked });
 });
 els.trayContentInput.addEventListener('change', () => saveSettings({ trayContent: els.trayContentInput.value }));
+if (els.edgeDockInput) {
+  els.edgeDockInput.addEventListener('change', () => saveSettings({ edgeDock: Boolean(els.edgeDockInput.checked) }));
+}
 els.windowToggleShortcutRecordButton?.addEventListener('click', startWindowShortcutRecording);
 els.windowToggleShortcutClearButton?.addEventListener('click', () => setWindowToggleShortcut('').catch(() => {}));
 els.startAtLoginInput?.addEventListener('change', () => saveSettings({ startAtLogin: els.startAtLoginInput.checked }));
