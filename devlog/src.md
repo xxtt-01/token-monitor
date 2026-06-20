@@ -1,3 +1,21 @@
+## 2026-06-20 18:00: 回退 cacheRead 改动 + 移除 Go 定价表（PR 审查修复）
+- **文件:**
+  - `src/shared/usage.js`
+  - `src/shared/collector.js`
+  - `src/electron/main.js`
+  - `src/electron/renderer/index.html`
+  - `src/electron/renderer/app.js`
+- **原因:** PR #18 审查指出两个核心错误：
+  1. **cacheRead "去重"错误：** 假设"input 已含 cacheRead"不成立 — tokscale 在输出前已从 input 中减去 cached_tokens。原始 `tokenValue(row)` 求和 input+output+cacheRead+cacheWrite 正确无误。我们的 "fix" 用 `inputTokens + output` 把 cacheRead/cacheWrite 整个丢弃，Claude 等缓存大户总量掉 99%+
+  2. **Go 定价表不适用：** 硬编码 `GO_PLAN_PRICING` 按 model 触发不区分 provider，同模型不同工具被错套 Go 价。OpenCode 调价即过期。v0.14.0 的 Custom model pricing 是正确替代方案
+- **决策:**
+  - 恢复 `extractUsageFromTokscale` 使用原始 `tokenValue(row)` 计算 totalTokens
+  - 删除 `GO_PLAN_PRICING` 定价表
+  - 删除 `goPlanFormula` 参数和传播链路（collector → main → renderer）
+  - 删除设置面板中 Go 复选框
+  - 本 commit 同时在 fix/cacheread-gopricing 分支，准备提独立 PR
+- **影响范围:** totalTokens 恢复为包含 cacheRead/cacheWrite 的正确值；移除 Go 套餐计费开关和定价表
+
 ## 2026-06-17 18:00: 多账号采集 — 每个 profile 独立查询限额
 - **文件:**
   - `src/shared/limitCollector.js`

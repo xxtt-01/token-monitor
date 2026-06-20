@@ -354,7 +354,7 @@ function shouldIncludeHistory(nowMs, lastHistoryAtMs, historyIntervalMs, force, 
   return nowMs - (lastHistoryAtMs || 0) >= historyIntervalMs;
 }
 async function collectUsageOnce(options) {
-  const { clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion = appVersion(), agentRuntime = '', goPlanFormula } = options;
+  const { clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion = appVersion(), agentRuntime = '' } = options;
   const normalizedClients = normalizeClientsCsv(clients);
   let today = emptyPeriod();
   let month = emptyPeriod();
@@ -378,7 +378,7 @@ async function collectUsageOnce(options) {
       if (anchor && anchor.dateKey === localTodayKey()) {
         // Anchored tick: scan only --today, derive month/allTime via applyPeriodDelta.
         const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
-        today = extractUsageFromTokscale(todayJson, goPlanFormula);
+        today = extractUsageFromTokscale(todayJson);
         options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
         month = applyPeriodDelta(anchor.month, today, anchor.today);
         allTime = applyPeriodDelta(anchor.allTime, today, anchor.today);
@@ -388,11 +388,11 @@ async function collectUsageOnce(options) {
         const todayJson = await runTokscale({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
         const monthJson = await runTokscale({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
         const allTimeJson = await runTokscale({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
-        today = extractUsageFromTokscale(todayJson, goPlanFormula);
+        today = extractUsageFromTokscale(todayJson);
         options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
-        month = extractUsageFromTokscale(monthJson, goPlanFormula);
+        month = extractUsageFromTokscale(monthJson);
         options.onProgress?.({ today, month, allTime: null, updatedAt: new Date().toISOString() });
-        allTime = extractUsageFromTokscale(allTimeJson, goPlanFormula);
+        allTime = extractUsageFromTokscale(allTimeJson);
       }
       applySessionTimestamps({ today, month, allTime }, options.homeDir || os.homedir());
     }
@@ -530,7 +530,7 @@ function startCollector(options) {
   const {
     clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion, agentRuntime,
     intervalMs, historyIntervalMs = 15 * 60 * 1000, historyEnabled = true, watchEnabled, watchDebounceMs, limitsEnabled,
-    onUpdate, onError, logger, goPlanFormula
+    onUpdate, onError, logger
   } = options;
   const log = logger || (() => {});
   const limitsCollector = limitsEnabled !== false ? createLimitsCollector(options) : null;

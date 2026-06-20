@@ -169,7 +169,6 @@ function defaultSettings() {
     archivedClientUsage: { version: 1, clients: {} },
     allTimeSince: process.env.TOKEN_MONITOR_ALL_TIME_SINCE || '2024-01-01',
     customModelPricing: [],
-    goPlanFormula: false,
     limitsEnabled: parseBoolean(process.env.TOKEN_MONITOR_LIMITS_ENABLED, true),
     limitProviders: parseLimitProviders(process.env.TOKEN_MONITOR_LIMIT_PROVIDERS).join(','),
     limitProviderOrder: defaultLimitProviderOrder(),
@@ -1344,7 +1343,6 @@ function startSyncCollector() {
     watchEnabled: true,
     watchDebounceMs: 1500,
     limitsEnabled: settings.limitsEnabled !== false,
-    goPlanFormula: settings.goPlanFormula === true,
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     opencodeCookie: settings.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '',
@@ -1384,7 +1382,6 @@ function startHostCollector() {
     watchEnabled: true,
     watchDebounceMs: 1500,
     limitsEnabled: settings.limitsEnabled !== false,
-    goPlanFormula: settings.goPlanFormula === true,
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     opencodeCookie: settings.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '',
@@ -1515,7 +1512,6 @@ function startLocalCollector() {
     watchEnabled: true,
     watchDebounceMs: 1500,
     limitsEnabled: settings.limitsEnabled !== false,
-    goPlanFormula: settings.goPlanFormula === true,
     limitProviders: settings.limitProviders ?? defaultLimitProviders(),
     limitsRefreshMs: normalizeLimitsRefreshMs(settings.limitsRefreshMs),
     opencodeCookie: settings.opencodeCookie || process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '',
@@ -2403,7 +2399,6 @@ app.whenReady().then(() => {
     const previousCurrency = settings.currency;
     const previousStartAtLogin = settings.startAtLogin;
     const previousCustomModelPricing = JSON.stringify(settings.customModelPricing || []);
-    const previousGoPlanFormula = settings.goPlanFormula;
     const normalizedCurrency = patch.currency !== undefined ? normalizeCurrency(patch.currency, settings.currency) : normalizeCurrency(settings.currency);
     const normalizedPatch = { ...patch, currency: normalizedCurrency };
     delete normalizedPatch.codexManagedAccounts;
@@ -2498,8 +2493,7 @@ app.whenReady().then(() => {
       settings.limitProviders !== previousLimitProviders ||
       settings.limitsRefreshMs !== previousLimitsRefreshMs ||
       settings.historyEnabled !== previousHistoryEnabled ||
-      settings.deepseekApiKey !== previousDeepSeekApiKey ||
-      settings.goPlanFormula !== previousGoPlanFormula
+      settings.deepseekApiKey !== previousDeepSeekApiKey
     ) {
       startMode();
     }
