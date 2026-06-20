@@ -2743,3 +2743,9 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
 }
 
 .custom-pricing-edit { cursor: pointer; }
+
+/* 贴边隐藏光效 — 由 JS 注入 DOM（app.js edgeGlowEl） */
+@keyframes edge-glow-breathe {
+  0%, 100% { opacity: 0.7; box-shadow: 0 0 18px rgba(100,160,255,0.5), 0 0 40px rgba(140,90,255,0.2); }
+  50%      { opacity: 1;   box-shadow: 0 0 22px rgba(100,160,255,0.85), 0 0 50px rgba(140,90,255,0.35); }
+}

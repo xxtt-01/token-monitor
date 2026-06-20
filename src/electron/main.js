@@ -177,6 +177,7 @@ function defaultSettings() {
     showActiveAccount: parseBoolean(process.env.TOKEN_MONITOR_SHOW_ACTIVE_ACCOUNT, false),
     windowBounds: null,
     zoomFactor: 1,
+    edgeDock: false,
     showTrayIcon: true,
     trayMode: false,
     trayContent: 'tokens',
@@ -496,6 +497,11 @@ function sendFloatingBubbleState() {
   try { mainWindow.webContents.send('floatingBubble:state', floatingBubblePayload()); } catch (_) {}
 }
 
+function sendEdgeDockState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.webContents.send('edgeDock:state', { side: edge.side, enabled: edge.enabled }); } catch (_) {}
+}
+
 function stopFloatingBubbleAutoCollapseTimer() {
   if (floatingBubbleAutoCollapseTimer) clearTimeout(floatingBubbleAutoCollapseTimer);
   floatingBubbleAutoCollapseTimer = null;
@@ -730,6 +736,239 @@ function adjustZoom(delta) {
   setZoomFactor(clampZoom(settings.zoomFactor) + delta);
 }
 
+// ──贴边隐藏（类似QQ）─────────────────────────────────────────
+
+const EDGE_STRIP = 5;           // 隐藏后露出的像素
+const EDGE_TRIGGER = 50;        // 触发吸附的距离
+const EDGE_HOVER = 20;          // 触发滑出的距离
+const EDGE_HIDE_DELAY = 600;    // 鼠标离开后隐藏延迟(ms)
+const EDGE_POLL_MS = 150;       // 鼠标轮询间隔（降低 CPU 占用）
+const EDGE_ANIM_STEPS = 8;      // 动画步数
+const EDGE_ANIM_MS = 60;        // 动画总时长(ms)
+
+let edgeAnimating = false;      // 贴边滑行动画进行中
+
+const edge = {
+  enabled: false,
+  side: null,        // null | 'left' | 'right' | 'top'
+  expandBounds: null,// { x, y, w, h } 展开时的窗口位置
+  dockBounds: null,  // { x, y, w, h } 贴边时的窗口位置
+  monitor: null,     // setInterval 句柄
+  hideTimer: null,   // setTimeout 句柄
+};
+
+function edgeDisplay() {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  const b = mainWindow.getBounds();
+  try { return screen.getDisplayMatching({ x: b.x, y: b.y, width: b.width || 1, height: b.height || 1 }); }
+  catch (_) { return null; }
+}
+
+function edgeDetectSide() {
+  const d = edgeDisplay();
+  if (!d) return null;
+  const wa = d.workArea, b = mainWindow.getBounds();
+  if (Math.abs(b.x - wa.x) < EDGE_TRIGGER) return 'left';
+  if (Math.abs(b.x + b.width - wa.x - wa.width) < EDGE_TRIGGER) return 'right';
+  if (Math.abs(b.y - wa.y) < EDGE_TRIGGER) return 'top';
+  return null;
+}
+
+function edgeDockBounds(side) {
+  const d = edgeDisplay();
+  if (!d) return null;
+  const wa = d.workArea, b = mainWindow.getBounds();
+  if (side === 'left')  return { x: wa.x - b.width + EDGE_STRIP, y: b.y, width: b.width, height: b.height };
+  if (side === 'right') return { x: wa.x + wa.width - EDGE_STRIP, y: b.y, width: b.width, height: b.height };
+  if (side === 'top')   return { x: b.x, y: wa.y - b.height + EDGE_STRIP, width: b.width, height: b.height };
+  return null;
+}
+
+/** 进入贴边模式：记录展开位置，移动到仅露 strip 的 dock 位置 */
+function edgeDo(side, presetExpand) {
+  if (!mainWindow || mainWindow.isDestroyed() || edge.side) return;
+  const db = edgeDockBounds(side);
+  if (!db) return;
+  // 禁止 resize 防止 Windows 分屏干扰
+  try { if (mainWindow.isResizable()) mainWindow.setResizable(false); } catch (_) {}
+  edge.side = side;
+  edge.expandBounds = presetExpand || (() => {
+    const b = mainWindow.getBounds();
+    const d = edgeDisplay();
+    if (!d) return b;
+    const wa = d.workArea;
+    // 展开位置修正到与 workArea 边缘齐平，确保展开后完全可见
+    if (side === 'left')   return { ...b, x: wa.x };
+    if (side === 'right')  return { ...b, x: wa.x + wa.width - b.width };
+    if (side === 'top')    return { ...b, y: wa.y };
+    return b;
+  })();
+  edge.dockBounds = db;
+  mainWindow.setBounds(db);
+  edgeStartMonitor();
+  sendEdgeDockState();
+}
+
+/** 退出贴边模式：恢复到展开位置，清理状态 */
+function edgeUndo() {
+  edgeStopMonitor();
+  if (edgeAnimTimer) { clearInterval(edgeAnimTimer); edgeAnimTimer = null; }
+  edgeAnimating = false;
+  edge.side = null;
+  edge.expandBounds = null;
+  edge.dockBounds = null;
+  // 恢复 resize（在 edgeDo 中被禁止以阻止 Windows 分屏）
+  try { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isResizable()) mainWindow.setResizable(true); } catch (_) {}
+  sendEdgeDockState();
+}
+
+// ─── moved 事件处理（核心）─────────────────────────────────────
+// 关键设计：不区分用户拖拽和 setBounds 触发，而是用状态守卫来判断：
+//   - 动画期间 → 忽略（edgeAnimating）
+//   - 在贴边模式且窗口在已知位置（dock 或 expand）→ 忽略
+//   - 在贴边模式但窗口不在已知位置（用户拖走了）→ 退出贴边
+//   - 普通模式 → 检测边缘距离，吸附
+const edgeAfterMoved = () => {
+  if (!mainWindow || mainWindow.isDestroyed() || !edge.enabled) return;
+  if (edgeAnimating) return;
+
+  if (edge.side && edge.expandBounds && edge.dockBounds) {
+    // 贴边模式：检查窗口是否在已知位置
+    const b = mainWindow.getBounds();
+    const atDock   = Math.abs(b.x - edge.dockBounds.x) < 5 && Math.abs(b.y - edge.dockBounds.y) < 5;
+    const atExpand = Math.abs(b.x - edge.expandBounds.x) < 5 && Math.abs(b.y - edge.expandBounds.y) < 5;
+    if (atDock || atExpand) return; // 在已知位置 → 忽略（动画或已稳定）
+
+    // 用户拖离了展开位置 → 退出贴边模式，重新检测新位置
+    const side = edgeDetectSide();
+    edgeUndo();
+    if (side) edgeDo(side);
+    return;
+  }
+
+  // 普通模式：检测是否靠近边缘
+  const side = edgeDetectSide();
+  if (side) edgeDo(side);
+};
+
+// ─── 鼠标轮询（贴边后监控鼠标位置决定展开/隐藏）─────────────────
+
+function edgeStartMonitor() {
+  edgeStopMonitor();
+  edge.monitor = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || !edge.side) { edgeStopMonitor(); return; }
+    try {
+      const pt = screen.getCursorScreenPoint(), b = mainWindow.getBounds(), d = edgeDisplay();
+      if (!d) return;
+      const wa = d.workArea;
+      const isHorizontal = edge.side === 'left' || edge.side === 'right';
+
+      // 窗口当前位置状态
+      const atDock = edge.dockBounds && (isHorizontal
+        ? Math.abs(b.x - edge.dockBounds.x) < 5
+        : Math.abs(b.y - edge.dockBounds.y) < 5);
+
+      const atExpand = edge.expandBounds && (isHorizontal
+        ? Math.abs(b.x - edge.expandBounds.x) < 5
+        : Math.abs(b.y - edge.expandBounds.y) < 5);
+
+      if (atDock) {
+        // 贴边状态：检测鼠标是否靠近屏幕边缘热区
+        const hover = isHorizontal
+          ? (edge.side === 'left' ? pt.x - wa.x : wa.x + wa.width - pt.x) < EDGE_HOVER && pt.y >= b.y && pt.y <= b.y + b.height
+          : pt.y - wa.y < EDGE_HOVER && pt.x >= b.x && pt.x <= b.x + b.width;
+        if (hover && !edgeAnimating) edgeSlide(edge.dockBounds, edge.expandBounds);
+      } else if (atExpand) {
+        // 展开状态：检测鼠标是否在窗口范围内（离开才启动隐藏计时）
+        const onWindow = pt.x >= b.x - 5 && pt.x <= b.x + b.width + 5 &&
+                         pt.y >= b.y - 5 && pt.y <= b.y + b.height + 5;
+        if (onWindow) {
+          if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
+        } else if (!edge.hideTimer) {
+          edge.hideTimer = setTimeout(() => {
+            edge.hideTimer = null;
+            if (!edgeAnimating) edgeSlide(edge.expandBounds, edge.dockBounds);
+          }, EDGE_HIDE_DELAY);
+        }
+      }
+    } catch (_) {}
+  }, EDGE_POLL_MS);
+}
+
+function edgeStopMonitor() {
+  if (edge.monitor) { clearInterval(edge.monitor); edge.monitor = null; }
+  if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
+}
+
+// ─── 滑行动画（easeInOutQuad）──────────────────────────────────
+
+let edgeAnimTimer = null;
+
+function edgeSlide(from, to) {
+  if (!mainWindow || mainWindow.isDestroyed() || !from || !to) return;
+  if (from.x === to.x && from.y === to.y) return;
+  if (edgeAnimTimer) { clearInterval(edgeAnimTimer); edgeAnimTimer = null; }
+
+  const stepMs = Math.max(1, Math.round(EDGE_ANIM_MS / EDGE_ANIM_STEPS));
+  let step = 0;
+  edgeAnimating = true;
+
+  edgeAnimTimer = setInterval(() => {
+    step++;
+    if (!mainWindow || mainWindow.isDestroyed()) { clearInterval(edgeAnimTimer); edgeAnimTimer = null; edgeAnimating = false; return; }
+
+    const t = Math.min(step / EDGE_ANIM_STEPS, 1);
+    // easeInOutQuad
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+    mainWindow.setBounds({
+      x: Math.round(from.x + (to.x - from.x) * e),
+      y: Math.round(from.y + (to.y - from.y) * e),
+      width: from.width,
+      height: from.height,
+    });
+
+    if (step >= EDGE_ANIM_STEPS) {
+      clearInterval(edgeAnimTimer); edgeAnimTimer = null;
+      edgeAnimating = false;
+      // 滑完恢复 resize（展开后可正常拖拽和分屏，edgeDo 中已被禁用）
+      try { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isResizable()) mainWindow.setResizable(true); } catch (_) {}
+    }
+  }, stepMs);
+}
+
+/** 启动贴边功能（设置变更或窗口创建时调用） */
+function startEdgeDock() {
+  edge.enabled = settings.edgeDock === true;
+  if (!edge.enabled) {
+    if (edge.side) {
+      if (edge.expandBounds) mainWindow?.setBounds(edge.expandBounds);
+      edgeUndo();
+    }
+    return;
+  }
+  // 启动时检测：如果窗口仅露 strip（上次是贴边关闭的），重新吸附
+  // 注意：不能用 edgeDetectSide()，因为贴边窗口坐标在屏幕外数百像素
+  if (!edge.side && mainWindow && !mainWindow.isDestroyed()) {
+    const d = edgeDisplay();
+    if (d) {
+      const wa = d.workArea, b = mainWindow.getBounds();
+      // 直接检查窗口可见 strip 在哪个边缘（不依赖 edgeDetectSide）
+      const onLeft  = b.x + b.width >= wa.x && b.x + b.width <= wa.x + EDGE_STRIP + 3;
+      const onRight = b.x >= wa.x + wa.width - EDGE_STRIP - 3 && b.x < wa.x + wa.width;
+      const onTop   = b.y + b.height >= wa.y && b.y + b.height <= wa.y + EDGE_STRIP + 3;
+      const side = onLeft ? 'left' : onRight ? 'right' : onTop ? 'top' : null;
+      if (side) {
+        // 窗口从贴边位置启动：expandBounds 应设为窗口全显位置（而非当前贴边位置）
+        const expandBounds = side === 'left'  ? { x: wa.x, y: b.y, width: b.width, height: b.height }
+                           : side === 'right' ? { x: wa.x + wa.width - b.width, y: b.y, width: b.width, height: b.height }
+                           : { x: b.x, y: wa.y, width: b.width, height: b.height };
+        edgeDo(side, expandBounds);
+      }
+    }
+  }
+}
+
 function readSettings() {
   settingsPath = path.join(app.getPath('userData'), 'settings.json');
   try {
@@ -896,6 +1135,7 @@ function applyWindowSettings() {
   if (typeof mainWindow.setFocusable === 'function') mainWindow.setFocusable(behavior.focusable);
   if (typeof mainWindow.setSkipTaskbar === 'function') mainWindow.setSkipTaskbar(Boolean(settings?.trayMode));
   if (!behavior.focusable && typeof mainWindow.blur === 'function') mainWindow.blur();
+  if (!floatingBubbleState.collapsed) startEdgeDock();
 }
 
 function nativeBlurEnabled(source = settings) {
@@ -1840,12 +2080,16 @@ function loadWindowFile(target, options = {}) {
     // async stats fetch resolves; revealing on load would flash empty content.
     // Wait until the renderer reports it has rendered real data instead.
     ipcMain.on('window:contentReady', onContentReady);
-    target.webContents.once('did-finish-load', () => applyZoomFactor(target));
+    target.webContents.once('did-finish-load', () => {
+      applyZoomFactor(target);
+      sendEdgeDockState();
+    });
   } else {
     target.once('ready-to-show', reveal);
     target.webContents.once('did-finish-load', () => {
       applyZoomFactor(target);
       reveal();
+      sendEdgeDockState();
     });
   }
   target.webContents.once('did-fail-load', (_event, code, description) => {
@@ -1917,7 +2161,7 @@ function createWindow(boundsOverride, options = {}) {
     else if (!quitRequested) scheduleFloatingBubbleAutoCollapse();
   });
   win.on('resized', persistBoundsSoon);
-  win.on('moved', persistBoundsSoon);
+  win.on('moved', () => { persistBoundsSoon(); try { const b = win.getBounds(); const wa = require('electron').screen.getDisplayMatching(b).workArea; edgeAfterMoved(b, wa); } catch (_) {} });
   win.on('close', (event) => {
     if (quitRequested) return;
     const action = mainWindowCloseAction(settings, { platform: process.platform });
@@ -1932,6 +2176,7 @@ function createWindow(boundsOverride, options = {}) {
   });
   win.webContents.on('before-input-event', handleZoomShortcut);
   win.webContents.once('did-finish-load', sendFloatingBubbleState);
+win.webContents.once('did-finish-load', sendEdgeDockState);
   loadWindowFile(win, {
     waitForContent: options.waitForContent === true,
     inactive: options.inactive === true,
