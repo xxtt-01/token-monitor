@@ -24,3 +24,5 @@ Thumbs.db
 worker/.wrangler/
 worker/node_modules/
 worker/.dev.vars
+CONTEXT.md
+devlog/
