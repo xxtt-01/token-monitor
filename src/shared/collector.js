@@ -507,14 +507,25 @@ function clientDataDirPresence(clientsCsv) {
   return presence;
 }
 
-// Collect mtime of each client data directory for tokscale cache invalidation.
+// Collect mtime of each client data directory and its files for tokscale cache
+// invalidation. Uses file-level mtime (not just directory mtime) because on APFS
+// and NTFS, appending to an existing file does NOT update the parent directory's
+// mtime — only the file's own mtime changes.
 function collectDirTimestamps(clientsCsv) {
   const candidates = clientWatchCandidates(clientsCsv);
   const ts = {};
   for (const [client, dirs] of Object.entries(candidates)) {
     if (SELF_SYNCED_CLIENTS.has(client)) continue;
     for (const dir of dirs) {
-      try { ts[dir] = fs.statSync(dir).mtimeMs; } catch (_) {}
+      try {
+        const stat = fs.statSync(dir);
+        if (stat.isDirectory()) {
+          ts[dir] = stat.mtimeMs;
+          for (const entry of fs.readdirSync(dir)) {
+            try { ts[path.join(dir, entry)] = fs.statSync(path.join(dir, entry)).mtimeMs; } catch (_) {}
+          }
+        }
+      } catch (_) {}
     }
   }
   return ts;
