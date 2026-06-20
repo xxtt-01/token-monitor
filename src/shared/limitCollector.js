@@ -1836,7 +1836,7 @@ async function fetchOpenCodeLimits(options = {}, deps = {}) {
   if (goLocal.status === 'ok') {
     providers.push(normalizeLimitProvider({
       provider: 'opencode',
-      accountKey: hashKey('opencode', 'local'),
+      accountKey: hashKey('opencode', 'profile:local'),
       accountLabel: 'Local',
       source: 'local',
       status: 'ok',
@@ -1903,7 +1903,7 @@ async function fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, no
 
     return normalizeLimitProvider({
       provider: 'opencode',
-      accountKey: hashKey('opencode', name),
+      accountKey: hashKey('opencode', `profile:${name}`),
       accountLabel: name,
       source: 'web',
       status,
@@ -1914,7 +1914,7 @@ async function fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, no
   } catch (err) {
     clearTimeout(timer);
     return normalizeLimitProvider({
-      provider: 'opencode', accountKey: hashKey('opencode', name),
+      provider: 'opencode', accountKey: hashKey('opencode', `profile:${name}`),
       accountLabel: name, source: 'web', status: 'unavailable',
       updatedAt, windows: [], balanceUsd: null
     });
