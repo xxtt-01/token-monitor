@@ -363,16 +363,22 @@ async function collectUsageOnce(options) {
   let month = emptyPeriod();
   let allTime = emptyPeriod();
   const anchor = options.todayOnlyAnchor;
-  const anchorUsed = Boolean(anchor && anchor.dateKey === localTodayKey());
   if (normalizedClients) {
     await maybeSyncCursor(normalizedClients, options.logger);
     await maybeSyncAntigravity(normalizedClients, options.logger, options.homeDir || os.homedir());
-    if (anchorUsed) {
+
+    if (options.skipTokenscan) {
+      today = anchor.today;
+      month = anchor.month;
+      allTime = anchor.allTime;
+      options.onProgress?.({ today, month, allTime, updatedAt: new Date().toISOString() });
+    } else if (anchor && anchor.dateKey === localTodayKey()) {
       // Anchored tick (watch-triggered): every tokscale period scan costs the
       // same full load + filter, so scan only --today and update the broader
       // windows exactly via applyPeriodDelta — one spawn instead of three.
       const todayJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
       today = extractUsageFromTokscale(todayJson);
+      options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
       month = applyPeriodDelta(anchor.month, today, anchor.today);
       allTime = applyPeriodDelta(anchor.allTime, today, anchor.today);
     } else {
@@ -382,7 +388,9 @@ async function collectUsageOnce(options) {
       const monthJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
       const allTimeJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
       today = extractUsageFromTokscale(todayJson);
+      options.onProgress?.({ today, month: null, allTime: null, updatedAt: new Date().toISOString() });
       month = extractUsageFromTokscale(monthJson);
+      options.onProgress?.({ today, month, allTime: null, updatedAt: new Date().toISOString() });
       allTime = extractUsageFromTokscale(allTimeJson);
     }
     applySessionTimestamps({ today, month, allTime }, options.homeDir || os.homedir());
@@ -394,7 +402,7 @@ async function collectUsageOnce(options) {
   // that only exists inside WSL still reports as active.
   const windowsPeriods = { today, month, allTime };
   let wslBundle = options.wslAnchor || emptyWslBundle();
-  if (normalizedClients && !anchorUsed) {
+  if (normalizedClients && !options.skipTokenscan && !(anchor && anchor.dateKey === localTodayKey())) {
     wslBundle = await collectWsl({
       clients: normalizedClients,
       allTimeSince,
@@ -499,6 +507,27 @@ function clientDataDirPresence(clientsCsv) {
   return presence;
 }
 
+// Collect mtime of each client data directory for tokscale cache invalidation.
+function collectDirTimestamps(clientsCsv) {
+  const candidates = clientWatchCandidates(clientsCsv);
+  const ts = {};
+  for (const [client, dirs] of Object.entries(candidates)) {
+    if (SELF_SYNCED_CLIENTS.has(client)) continue;
+    for (const dir of dirs) {
+      try { ts[dir] = fs.statSync(dir).mtimeMs; } catch (_) {}
+    }
+  }
+  return ts;
+}
+
+function timestampsEqual(a, b) {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+  for (const key of keys) {
+    if (a?.[key] !== b?.[key]) return false;
+  }
+  return true;
+}
+
 // Pure detection-status derivation, given the two existing signals per client:
 // `active`  — tokscale read all-time usage for it,
 // `waiting` — its data directory exists but no usage was found,
@@ -537,6 +566,20 @@ function startCollector(options) {
   // between full ticks (WSL is not scanned on watch ticks).
   let anchor = null;
   let wslAnchor = null;
+  // Persistent anchor: on-disk cache for month/allTime periods.
+  const anchorPath = path.join(sharedDataDir(), 'collector-anchor.json');
+  try {
+    const saved = readJson(anchorPath, null);
+    if (saved && saved.dateKey && saved.today && saved.month && saved.allTime) {
+      anchor = saved;
+    }
+  } catch (_) {}
+  // Directory timestamp cache: skip tokscale entirely when no data dir changed.
+  const dirTimestampsPath = path.join(sharedDataDir(), 'collector-dirts.json');
+  let savedDirTimestamps = null;
+  try {
+    savedDirTimestamps = readJson(dirTimestampsPath, null);
+  } catch (_) {}
   let pendingWaiters = [];
   let debounceTimer = null;
   let intervalTimer = null;
@@ -554,8 +597,9 @@ function startCollector(options) {
     if (includeHistory) lastHistoryAt = Date.now();
     const todayKey = localTodayKey();
     const anchored = Boolean(tickOptions.todayOnly && anchor && anchor.dateKey === todayKey);
+    const anchorHasData = anchored && (anchor.today?.totalTokens > 0 || anchor.month?.totalTokens > 0 || anchor.allTime?.totalTokens > 0);
+    const dirsMatch = anchored && anchorHasData && savedDirTimestamps && timestampsEqual(collectDirTimestamps(clients), savedDirTimestamps);
     try {
-      let captured = null;
       const summary = await collectUsageOnce({
         ...options,
         clients,
@@ -569,12 +613,35 @@ function startCollector(options) {
         forceLimits: Boolean(tickOptions.forceLimits),
         todayOnlyAnchor: anchored ? anchor : null,
         wslAnchor: anchored ? wslAnchor : null,
-        onAnchorComputed: (x) => { captured = x; }
+        skipTokenscan: dirsMatch,
+        onProgress: (partial) => {
+          if (!partial.today) return;
+          onUpdate?.({
+            deviceId, hostname: os.hostname(),
+            platform: `${process.platform}-${process.arch}`,
+            updatedAt: partial.updatedAt,
+            agentVersion, agentRuntime,
+            trackedClients: (clients || '').split(',').filter(Boolean),
+            clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
+            today: partial.today,
+            month: partial.month || emptyPeriod(),
+            allTime: partial.allTime || emptyPeriod(),
+            history: null, limits: null
+          }, 'progress');
+        }
       });
       if (stopped) return;
-      if (!anchored && captured) {
-        anchor = { dateKey: todayKey, today: captured.windowsPeriods.today, month: captured.windowsPeriods.month, allTime: captured.windowsPeriods.allTime };
-        wslAnchor = captured.wslBundle;
+      if (!anchored) {
+        anchor = { dateKey: todayKey, today: summary.today, month: summary.month, allTime: summary.allTime };
+        try {
+          fs.mkdirSync(path.dirname(anchorPath), { recursive: true });
+          fs.writeFileSync(anchorPath, JSON.stringify(anchor));
+          savedDirTimestamps = collectDirTimestamps(clients);
+          fs.writeFileSync(dirTimestampsPath, JSON.stringify(savedDirTimestamps));
+        } catch (_) {}
+      } else if (!dirsMatch && summary?.today?.totalTokens > 0) {
+        savedDirTimestamps = collectDirTimestamps(clients);
+        try { fs.writeFileSync(dirTimestampsPath, JSON.stringify(savedDirTimestamps)); } catch (_) {}
       }
       await onUpdate?.(summary, reason);
     } catch (error) {
@@ -646,7 +713,8 @@ function startCollector(options) {
 
   function loop() {
     if (stopped) return;
-    runTick('interval').finally(() => {
+    const anchorToday = anchor && anchor.dateKey === localTodayKey();
+    runTick('interval', anchorToday ? { todayOnly: true } : {}).finally(() => {
       if (stopped) return;
       intervalTimer = setTimeout(loop, intervalMs);
     });
