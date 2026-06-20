@@ -2161,12 +2161,12 @@ function createWindow(boundsOverride, options = {}) {
     else if (!quitRequested) scheduleFloatingBubbleAutoCollapse();
   });
   win.on('resized', persistBoundsSoon);
-  win.on('moved', () => { persistBoundsSoon(); try { const b = win.getBounds(); const wa = require('electron').screen.getDisplayMatching(b).workArea; edgeAfterMoved(b, wa); } catch (_) {} });
+  win.on('moved', () => { persistBoundsSoon(); try { edgeAfterMoved(); } catch (_) {} });
   win.on('move', () => {
     try {
       if (!edge.enabled || edgeAnimating) return;
       const b = win.getBounds();
-      const wa = require('electron').screen.getDisplayMatching(b).workArea;
+      const wa = screen.getDisplayMatching(b).workArea;
       const onEdge = b.x <= wa.x + 30 || b.x + b.width >= wa.x + wa.width - 30 || b.y <= wa.y + 30;
       if (onEdge) { try { if (win.isResizable()) win.setResizable(false); } catch (_) {} }
       else if (!win.isResizable()) { try { win.setResizable(true); } catch (_) {} }
