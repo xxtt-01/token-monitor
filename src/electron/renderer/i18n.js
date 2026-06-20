@@ -799,7 +799,7 @@
       'settings.display.windowShortcutInvalid': '請搭配 Ctrl、Cmd 或 Alt。',
       'settings.display.windowShortcutRegistered': '已啟用 {shortcut}。',
       'settings.display.windowShortcutConflict': '無法註冊 {shortcut}，可能和其他 app 衝突。'
-      'settings.display.edgeDock': '貼邊隱藏 — 拖到螢幕邊緣自動吸附隱藏',,
+      'settings.display.edgeDock': '貼邊隱藏 — 拖到螢幕邊緣自動吸附隱藏',
       'settings.shortcut.off': '關閉',
       'settings.shortcut.record': '錄製',
       'settings.shortcut.recording': '錄製中...',
