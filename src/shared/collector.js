@@ -379,10 +379,12 @@ async function collectUsageOnce(options) {
       // Serial on purpose: concurrent scans triple the peak CPU/IO load, which
       // is what let the issue #15 self-trigger loop spike tokscale past 500% CPU.
       const todayJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
-      const monthJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
-      const allTimeJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
       today = extractUsageFromTokscale(todayJson);
+      if (typeof options.onProgress === 'function') options.onProgress({ today, updatedAt: new Date().toISOString() });
+      const monthJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
       month = extractUsageFromTokscale(monthJson);
+      if (typeof options.onProgress === 'function') options.onProgress({ today, month, updatedAt: new Date().toISOString() });
+      const allTimeJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
       allTime = extractUsageFromTokscale(allTimeJson);
     }
     applySessionTimestamps({ today, month, allTime }, options.homeDir || os.homedir());
@@ -569,7 +571,21 @@ function startCollector(options) {
         forceLimits: Boolean(tickOptions.forceLimits),
         todayOnlyAnchor: anchored ? anchor : null,
         wslAnchor: anchored ? wslAnchor : null,
-        onAnchorComputed: (x) => { captured = x; }
+        onAnchorComputed: (x) => { captured = x; },
+        onProgress: (partial) => {
+          if (!partial.today) return;
+          onUpdate?.({
+            deviceId, hostname: os.hostname(),
+            platform: `${process.platform}-${process.arch}`,
+            updatedAt: partial.updatedAt,
+            agentVersion, agentRuntime,
+            trackedClients: (clients || '').split(',').filter(Boolean),
+            clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
+            today: partial.today,
+            month: partial.month || emptyPeriod(),
+            allTime: partial.allTime || emptyPeriod()
+          }, 'progress');
+        }
       });
       if (stopped) return;
       if (!anchored && captured) {
