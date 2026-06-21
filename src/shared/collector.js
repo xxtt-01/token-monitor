@@ -541,6 +541,11 @@ function configFingerprint(clientsCsv, allTimeSince) {
   return `${normalizeClientsCsv(clientsCsv)}|${allTimeSince}`;
 }
 
+// Force a full scan at least this often even when the anchor is otherwise
+// valid, so a long-running session periodically rescans month/allTime
+// and picks up any changes that the delta-derivation might miss.
+const FULL_SCAN_INTERVAL_MS = 60 * 60 * 1000;
+
 function startCollector(options) {
   const {
     clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion, agentRuntime,
@@ -560,6 +565,7 @@ function startCollector(options) {
   // between full ticks (WSL is not scanned on watch ticks).
   let anchor = null;
   let wslAnchor = null;
+  let lastFullScanAt = 0;
   let pendingWaiters = [];
   let debounceTimer = null;
   let intervalTimer = null;
@@ -578,6 +584,7 @@ function startCollector(options) {
       if (saved.configFingerprint === fp) {
         anchor = { dateKey: saved.dateKey, today: saved.today, month: saved.month, allTime: saved.allTime };
         wslAnchor = saved.wslBundle || null;
+        lastFullScanAt = Date.now();
       }
     }
   } catch (_) {}
@@ -614,6 +621,7 @@ function startCollector(options) {
       if (!anchored && captured) {
         anchor = { dateKey: todayKey, today: captured.windowsPeriods.today, month: captured.windowsPeriods.month, allTime: captured.windowsPeriods.allTime };
         wslAnchor = captured.wslBundle;
+        lastFullScanAt = Date.now();
         try {
           fs.mkdirSync(path.dirname(anchorPath), { recursive: true });
           fs.writeFileSync(anchorPath, JSON.stringify({
@@ -696,7 +704,10 @@ function startCollector(options) {
 
   function loop() {
     if (stopped) return;
-    const anchorToday = Boolean(anchor && anchor.dateKey === localTodayKey());
+    // Full scan at least once per FULL_SCAN_INTERVAL_MS so the anchor
+    // does not drift from reality over a long-running session.
+    const fullScanDue = lastFullScanAt > 0 && Date.now() - lastFullScanAt >= FULL_SCAN_INTERVAL_MS;
+    const anchorToday = Boolean(!fullScanDue && anchor && anchor.dateKey === localTodayKey());
     runTick('interval', anchorToday ? { todayOnly: true } : {}).finally(() => {
       if (stopped) return;
       intervalTimer = setTimeout(loop, intervalMs);
