@@ -87,7 +87,7 @@ test('homeTrendSummary returns the peak value and real date anchors', () => {
   });
 });
 
-test('homeActivityWheelRoute sends vertical wheel gestures back to Home scrolling', () => {
+test('homeActivityWheelRoute lets vertical wheel gestures continue to Home scrolling', () => {
   assert.equal(homeActivityWheelRoute({ deltaX: 2, deltaY: 40 }), 'home-vertical');
   assert.equal(homeActivityWheelRoute({ deltaX: 40, deltaY: 2 }), 'activity-horizontal');
   assert.equal(homeActivityWheelRoute({ deltaX: 0, deltaY: 40, shiftKey: true }), 'activity-horizontal');

@@ -1770,6 +1770,7 @@ body.floating-bubble-collapsed-right .floating-bubble-tab {
   overflow-y: hidden;
   cursor: grab;
   scrollbar-width: none;
+  overscroll-behavior-x: contain;
   touch-action: pan-x pan-y;
   user-select: none;
 }

@@ -1987,22 +1987,16 @@ function setupHomeActivityScroller(scroller) {
   };
   scroller.addEventListener('scroll', updatePosition);
   scroller.addEventListener('click', (event) => event.stopPropagation());
-  scroller.addEventListener('wheel', (event) => {
-    if (homeOverviewApi.homeActivityWheelRoute(event) !== 'home-vertical') return;
-    const homePanel = scroller.closest('.home-panel');
-    if (!homePanel) return;
-    const previousTop = homePanel.scrollTop;
-    homePanel.scrollTop += event.deltaY;
-    if (homePanel.scrollTop !== previousTop) event.preventDefault();
-  }, { passive: false });
   scroller.addEventListener('pointerdown', (event) => {
     if (event.button !== 0 || event.pointerType === 'touch') return;
+    event.preventDefault();
     drag = { x: event.clientX, left: scroller.scrollLeft };
     scroller.classList.add('is-dragging');
     scroller.setPointerCapture?.(event.pointerId);
   });
   scroller.addEventListener('pointermove', (event) => {
     if (!drag) return;
+    event.preventDefault();
     scroller.scrollLeft = drag.left - (event.clientX - drag.x);
   });
   const endDrag = (event) => {

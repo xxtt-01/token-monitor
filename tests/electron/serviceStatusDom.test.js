@@ -166,13 +166,23 @@ test('Home overview list markers use the shared tool icon path when enabled', ()
   assert.match(app, /home-list-mark row-icon/);
 });
 
-test('Home activity heatmap lets vertical wheel gestures scroll the Home panel', () => {
+test('Home activity heatmap lets vertical wheel gestures bubble to native Home scrolling', () => {
   const app = readRendererFile('app.js');
   const setupBody = functionBody(app, 'setupHomeActivityScroller', 'restoreHomeActivityScroll');
-  assert.match(setupBody, /homeActivityWheelRoute\(event\)/);
-  assert.match(setupBody, /closest\('\.home-panel'\)/);
-  assert.match(setupBody, /homePanel\.scrollTop \+= event\.deltaY/);
+  assert.doesNotMatch(setupBody, /addEventListener\('wheel'/);
+  assert.doesNotMatch(setupBody, /closest\('\.home-panel'\)/);
+  assert.doesNotMatch(setupBody, /homeActivityWheelDelta\(event/);
+  assert.doesNotMatch(setupBody, /homePanel\.scrollTop/);
   assert.doesNotMatch(setupBody, /scrollLeft \+= event\.deltaY/);
+});
+
+test('Home activity heatmap contains horizontal overscroll and prevents native pointer drag side effects', () => {
+  const app = readRendererFile('app.js');
+  const css = readRendererFile('styles.css');
+  const setupBody = functionBody(app, 'setupHomeActivityScroller', 'restoreHomeActivityScroll');
+  assert.match(cssRule(css, '.home-activity-scroll'), /overscroll-behavior-x:\s*contain/);
+  assert.match(setupBody, /pointerdown[\s\S]*event\.preventDefault\(\)/);
+  assert.match(setupBody, /pointermove[\s\S]*event\.preventDefault\(\)/);
 });
 
 test('Home model rows align icon spacing with the limit account rows', () => {
