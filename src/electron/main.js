@@ -742,7 +742,8 @@ const EDGE_STRIP = 5;           // 隐藏后露出的像素
 const EDGE_TRIGGER = 50;        // 触发吸附的距离
 const EDGE_HOVER = 20;          // 触发滑出的距离
 const EDGE_HIDE_DELAY = 600;    // 鼠标离开后隐藏延迟(ms)
-const EDGE_POLL_MS = 150;       // 鼠标轮询间隔（降低 CPU 占用）
+const EDGE_POLL_MS = 150;       // 鼠标轮询间隔（靠近边缘时）
+const EDGE_POLL_BACKOFF_MS = 500; // 鼠标远离边缘时的退避轮询间隔
 const EDGE_ANIM_STEPS = 8;      // 动画步数
 const EDGE_ANIM_MS = 60;        // 动画总时长(ms)
 
@@ -852,25 +853,33 @@ const edgeAfterMoved = () => {
 };
 
 // ─── 鼠标轮询（贴边后监控鼠标位置决定展开/隐藏）─────────────────
+// 使用自适应间隔：鼠标靠近边缘时快速轮询，远离时退避降低 CPU
 
 function edgeStartMonitor() {
   edgeStopMonitor();
-  edge.monitor = setInterval(() => {
+  let lastNearby = false;
+  function tick() {
     if (!mainWindow || mainWindow.isDestroyed() || !edge.side) { edgeStopMonitor(); return; }
+    let atDock = false, atExpand = false, nearby = false;
     try {
       const pt = screen.getCursorScreenPoint(), b = mainWindow.getBounds(), d = edgeDisplay();
-      if (!d) return;
+      if (!d) { edge.monitor = setTimeout(tick, EDGE_POLL_BACKOFF_MS); return; }
       const wa = d.workArea;
       const isHorizontal = edge.side === 'left' || edge.side === 'right';
 
       // 窗口当前位置状态
-      const atDock = edge.dockBounds && (isHorizontal
+      atDock = edge.dockBounds && (isHorizontal
         ? Math.abs(b.x - edge.dockBounds.x) < 5
         : Math.abs(b.y - edge.dockBounds.y) < 5);
 
-      const atExpand = edge.expandBounds && (isHorizontal
+      atExpand = edge.expandBounds && (isHorizontal
         ? Math.abs(b.x - edge.expandBounds.x) < 5
         : Math.abs(b.y - edge.expandBounds.y) < 5);
+
+      // 判断鼠标是否在边缘热区附近（决定轮询速度）
+      nearby = isHorizontal
+        ? (edge.side === 'left' ? pt.x - wa.x : wa.x + wa.width - pt.x) < EDGE_HOVER + 30
+        : pt.y - wa.y < EDGE_HOVER + 30;
 
       if (atDock) {
         // 贴边状态：检测鼠标是否靠近屏幕边缘热区
@@ -891,12 +900,17 @@ function edgeStartMonitor() {
           }, EDGE_HIDE_DELAY);
         }
       }
+      lastNearby = nearby;
     } catch (_) {}
-  }, EDGE_POLL_MS);
+    // 自适应：鼠标在热区附近或窗口展开时用快速轮询，否则退避
+    const delay = (!atDock || lastNearby) ? EDGE_POLL_MS : EDGE_POLL_BACKOFF_MS;
+    edge.monitor = setTimeout(tick, delay);
+  }
+  edge.monitor = setTimeout(tick, EDGE_POLL_MS);
 }
 
 function edgeStopMonitor() {
-  if (edge.monitor) { clearInterval(edge.monitor); edge.monitor = null; }
+  if (edge.monitor) { clearTimeout(edge.monitor); edge.monitor = null; }
   if (edge.hideTimer) { clearTimeout(edge.hideTimer); edge.hideTimer = null; }
 }
 
@@ -1135,7 +1149,7 @@ function applyWindowSettings() {
   if (typeof mainWindow.setFocusable === 'function') mainWindow.setFocusable(behavior.focusable);
   if (typeof mainWindow.setSkipTaskbar === 'function') mainWindow.setSkipTaskbar(Boolean(settings?.trayMode));
   if (!behavior.focusable && typeof mainWindow.blur === 'function') mainWindow.blur();
-  if (!floatingBubbleState.collapsed) startEdgeDock();
+  if (process.platform === 'win32' && !floatingBubbleState.collapsed) startEdgeDock();
 }
 
 function nativeBlurEnabled(source = settings) {
@@ -2161,8 +2175,14 @@ function createWindow(boundsOverride, options = {}) {
     else if (!quitRequested) scheduleFloatingBubbleAutoCollapse();
   });
   win.on('resized', persistBoundsSoon);
-  win.on('moved', () => { persistBoundsSoon(); try { edgeAfterMoved(); } catch (_) {} });
+  win.on('moved', () => {
+    persistBoundsSoon();
+    if (process.platform === 'win32') {
+      try { edgeAfterMoved(); } catch (_) {}
+    }
+  });
   win.on('move', () => {
+    if (process.platform !== 'win32') return;
     try {
       if (!edge.enabled || edgeAnimating) return;
       const b = win.getBounds();

@@ -3096,7 +3096,9 @@ function syncSettingsForm() {
   els.titleIconInput.checked = state.settings.titleIconOnly === true;
   els.settingsInTitlebarInput.checked = state.settings.settingsInTitlebar === true;
   els.discordRpcInput.checked = Boolean(state.settings.discordRpcEnabled);
-  if (els.edgeDockInput) els.edgeDockInput.checked = Boolean(state.settings.edgeDock);
+  if (process.platform === 'win32') {
+    if (els.edgeDockInput) els.edgeDockInput.checked = Boolean(state.settings.edgeDock);
+  }
   syncWindowBehaviorControls();
   els.floatingBubbleInput.checked = state.settings.floatingBubbleEnabled === true;
   if (els.floatingBubbleTriggerInput) els.floatingBubbleTriggerInput.value = state.settings.floatingBubbleTrigger === 'hover' ? 'hover' : 'click';
@@ -4149,8 +4151,13 @@ els.trayModeInput.addEventListener('change', () => {
   saveSettings({ trayMode: els.trayModeInput.checked });
 });
 els.trayContentInput.addEventListener('change', () => saveSettings({ trayContent: els.trayContentInput.value }));
-if (els.edgeDockInput) {
-  els.edgeDockInput.addEventListener('change', () => saveSettings({ edgeDock: Boolean(els.edgeDockInput.checked) }));
+const edgeDockRow = document.getElementById('edgeDockRow');
+if (process.platform === 'win32') {
+  if (els.edgeDockInput) {
+    els.edgeDockInput.addEventListener('change', () => saveSettings({ edgeDock: Boolean(els.edgeDockInput.checked) }));
+  }
+} else if (edgeDockRow) {
+  edgeDockRow.style.display = 'none';
 }
 els.windowToggleShortcutRecordButton?.addEventListener('click', startWindowShortcutRecording);
 els.windowToggleShortcutClearButton?.addEventListener('click', () => setWindowToggleShortcut('').catch(() => {}));
@@ -4247,8 +4254,8 @@ window.tokenMonitor.onEdgeDockState?.((payload) => {
       background: 'linear-gradient(180deg, rgba(64,200,255,0.95), rgba(180,100,255,1) 50%, rgba(64,200,255,0.95))',
       animation: 'edge-glow-breathe 2.5s ease-in-out infinite',
     };
-    if (payload.side === 'left')   { s.right = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
-    if (payload.side === 'right')  { s.left = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
+    if (payload.side === 'left')   { s.left = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
+    if (payload.side === 'right')  { s.right = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
     if (payload.side === 'top')    { s.bottom = '0'; s.left = '0'; s.right = '0'; s.height = '6px'; }
     Object.assign(edgeGlowEl.style, s);
     document.body.appendChild(edgeGlowEl);
