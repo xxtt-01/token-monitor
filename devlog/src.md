@@ -6,4 +6,11 @@
   - 在完整扫描路径（3 次 tokscale 调用）中，每次 period 完成后通过 `onProgress` 推送中间结果
   - 部分摘要中**省略** `history` 和 `limits` key（而非设为 null），让 `carryDeviceHistory` 正常延续前值
   - 锚点 tick（watch 触发）不触发 onProgress，因为单次 --today 扫描已经很快
-- **影响范围:** `src/shared/collector.js` — `collectUsageOnce` 新增 onProgress 调用点，`performTick` 新增 onProgress handler
+  - `onProgress` 调用和 handler 中的 `onUpdate` 都包裹 try-catch，防止异常中断后续扫描
+- **影响范围:** `src/shared/collector.js` — `collectUsageOnce` 新增 2 个 try-catch 保护的 onProgress 调用点，`performTick` 新增 try-catch 保护的 onProgress handler
+- **安全分析:**
+  - `normalizeLimitsSummary(undefined)` 返回空 limits，不会报错
+  - `carryDeviceHistory` 在缺少 history key 时正确延续前值
+  - sync/host collector 的 onUpdate 只取 summary 参数，reason='progress' 被忽略但不影响
+  - renderer 的 render() 使用 `state.stats.periods?.[xx]` 可选链，缺失 period 数据安全
+  - historyPreview 在第一次渐进推送时为空（无前值可延续），最终推送后正常显示

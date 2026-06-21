@@ -85,3 +85,28 @@ test('progressive loading skips onProgress on anchored ticks', async () => {
 function emptyWslBundle() {
   return { today: emptyPeriod(), month: emptyPeriod(), allTime: emptyPeriod() };
 }
+
+test('progressive loading onProgress throw does not abort the full scan', async () => {
+  calls = 0;
+  let onProgressCalled = false;
+  const summary = await collectUsageOnce({
+    clients: 'claude',
+    allTimeSince: '2025-01-01',
+    commandTimeoutMs: 1000,
+    deviceId: 'dev1',
+    limitsEnabled: false,
+    historyEnabled: false,
+    runTokscale: sequentialTokscale,
+    collectWslUsage: async () => emptyWslBundle(),
+    onProgress: () => {
+      onProgressCalled = true;
+      throw new Error('simulated progress error');
+    }
+  });
+  // onProgress was called (and threw, but was caught)
+  assert.equal(onProgressCalled, true, 'onProgress should have been called');
+  // The full scan must still complete with all three periods
+  assert.equal(summary.today.totalTokens, 105, 'today must survive an onProgress throw');
+  assert.equal(summary.month.totalTokens, 730, 'month must survive an onProgress throw');
+  assert.equal(summary.allTime.totalTokens, 2930, 'allTime must survive an onProgress throw');
+});

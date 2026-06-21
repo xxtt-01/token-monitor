@@ -380,10 +380,10 @@ async function collectUsageOnce(options) {
       // is what let the issue #15 self-trigger loop spike tokscale past 500% CPU.
       const todayJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--today'], commandTimeoutMs });
       today = extractUsageFromTokscale(todayJson);
-      if (typeof options.onProgress === 'function') options.onProgress({ today, updatedAt: new Date().toISOString() });
+      try { if (typeof options.onProgress === 'function') options.onProgress({ today, updatedAt: new Date().toISOString() }); } catch (_) {}
       const monthJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--month'], commandTimeoutMs });
       month = extractUsageFromTokscale(monthJson);
-      if (typeof options.onProgress === 'function') options.onProgress({ today, month, updatedAt: new Date().toISOString() });
+      try { if (typeof options.onProgress === 'function') options.onProgress({ today, month, updatedAt: new Date().toISOString() }); } catch (_) {}
       const allTimeJson = await runTokscaleFn({ clients: normalizedClients, flags: ['--since', allTimeSince], commandTimeoutMs });
       allTime = extractUsageFromTokscale(allTimeJson);
     }
@@ -574,17 +574,22 @@ function startCollector(options) {
         onAnchorComputed: (x) => { captured = x; },
         onProgress: (partial) => {
           if (!partial.today) return;
-          onUpdate?.({
-            deviceId, hostname: os.hostname(),
-            platform: `${process.platform}-${process.arch}`,
-            updatedAt: partial.updatedAt,
-            agentVersion, agentRuntime,
-            trackedClients: (clients || '').split(',').filter(Boolean),
-            clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
-            today: partial.today,
-            month: partial.month || emptyPeriod(),
-            allTime: partial.allTime || emptyPeriod()
-          }, 'progress');
+          try {
+            onUpdate?.({
+              deviceId, hostname: os.hostname(),
+              platform: `${process.platform}-${process.arch}`,
+              updatedAt: partial.updatedAt,
+              agentVersion, agentRuntime,
+              trackedClients: (clients || '').split(',').filter(Boolean),
+              clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
+              today: partial.today,
+              month: partial.month || emptyPeriod(),
+              allTime: partial.allTime || emptyPeriod()
+            }, 'progress');
+          } catch (_) {
+            // Progressive push errors must not abort the remaining period scans.
+            // The final onUpdate will report the complete data.
+          }
         }
       });
       if (stopped) return;
