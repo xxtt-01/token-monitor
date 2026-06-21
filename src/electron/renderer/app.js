@@ -4256,7 +4256,7 @@ window.tokenMonitor.onEdgeDockState?.((payload) => {
     };
     if (payload.side === 'left')   { s.left = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
     if (payload.side === 'right')  { s.right = '0'; s.top = '0'; s.bottom = '0'; s.width = '6px'; }
-    if (payload.side === 'top')    { s.bottom = '0'; s.left = '0'; s.right = '0'; s.height = '6px'; }
+    if (payload.side === 'top')    { s.top = '0'; s.left = '0'; s.right = '0'; s.height = '6px'; }
     Object.assign(edgeGlowEl.style, s);
     document.body.appendChild(edgeGlowEl);
   }
