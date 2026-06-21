@@ -2509,15 +2509,21 @@ app.whenReady().then(() => {
       return opencodeStatusCache.value;
     }
     const profiles = settings.opencodeProfiles || {};
-    const result = {};
-    for (const [name, profile] of Object.entries(profiles)) {
-      if (!profile.cookie || !profile.enabled) continue;
-      const [go, zen] = await Promise.all([
-        opencodeWeb.fetchGoWeb(profile.cookie, {}),
-        opencodeWeb.fetchZen(profile.cookie, {})
-      ]);
-      result[name] = { ...opencodeWeb.summarizeLink(go, zen), balanceUsd: zen.balanceUsd };
-    }
+    const entries = Object.entries(profiles).filter(([, p]) => p.cookie && p.enabled);
+
+    // Query all profiles in parallel
+    const results = await Promise.all(
+      entries.map(async ([name, profile]) => {
+        const [go, zen] = await Promise.all([
+          opencodeWeb.fetchGoWeb(profile.cookie, {}),
+          opencodeWeb.fetchZen(profile.cookie, {})
+        ]);
+        return [name, { ...opencodeWeb.summarizeLink(go, zen), balanceUsd: zen.balanceUsd }];
+      })
+    );
+
+    const result = Object.fromEntries(results);
+
     // 传统 env cookie
     const envCookie = process.env.TOKEN_MONITOR_OPENCODE_COOKIE || '';
     if (envCookie) {
@@ -2534,7 +2540,12 @@ app.whenReady().then(() => {
   ipcMain.handle('opencode:getProfiles', async () => {
     const profiles = settings.opencodeProfiles || {};
     const hasEnvVar = Boolean(process.env.TOKEN_MONITOR_OPENCODE_COOKIE);
-    return { profiles, hasEnvVar };
+    // Strip cookie values — renderer only needs name/enabled for display
+    const safe = {};
+    for (const [name, p] of Object.entries(profiles)) {
+      safe[name] = { enabled: p.enabled };
+    }
+    return { profiles: safe, hasEnvVar };
   });
   ipcMain.handle('opencode:saveProfile', async (_event, name, raw) => {
     const cookie = opencodeWeb.sanitizeCookieHeader(raw);

@@ -1243,7 +1243,7 @@ function renderOpenCodeAccountGroup(label, providers, color) {
   row.className = 'limit-row limit-row-group';
   const groupProvider = { provider: 'opencode', status: 'ok', windows: [] };
   const head = renderLimitProviderHead('opencode', label, groupProvider, color, {
-    planText: providers.length + ' accounts',
+    planText: t('settings.opencode.nAccounts', { count: providers.length }),
     hideMeta: true
   });
   const accountList = document.createElement('div');
@@ -4689,7 +4689,7 @@ function renderOpenCodeProfiles() {
     const entries = Object.entries(profiles);
 
     if (entries.length === 0 && !hasEnvVar) {
-      listEl.innerHTML = '<div class="opencode-empty">尚未添加任何账号。点下方「+ 添加账号」开始。</div>';
+      listEl.innerHTML = '<div class="opencode-empty">' + t('settings.opencode.emptyList') + '</div>';
       state.opencodeProfileCount = 0;
       return;
     }
@@ -4706,7 +4706,7 @@ function renderOpenCodeProfiles() {
       toggle.addEventListener('change', () => {
         api.setProfileEnabled(name, toggle.checked).then(() => {
           const info = item.querySelector('.profile-info');
-          info.textContent = toggle.checked ? '...' : '已禁用';
+          info.textContent = toggle.checked ? '...' : t('settings.opencode.disabled');
           renderSettingsSummaries();
         });
       });
@@ -4725,7 +4725,7 @@ function renderOpenCodeProfiles() {
       const renameBtn = document.createElement('button');
       renameBtn.className = 'profile-rename-btn';
       renameBtn.textContent = '✎';
-      renameBtn.title = '重命名';
+      renameBtn.title = t('settings.opencode.rename');
 
       let editing = false;
       function beginRename() {
@@ -4764,14 +4764,14 @@ function renderOpenCodeProfiles() {
       const infoSpan = document.createElement('span');
       infoSpan.className = 'profile-info';
       infoSpan.id = 'opencode-info-' + name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      infoSpan.textContent = profile.enabled ? '...' : '已禁用';
+      infoSpan.textContent = profile.enabled ? '...' : t('settings.opencode.disabled');
 
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'profile-delete';
       deleteBtn.textContent = '✕';
-      deleteBtn.title = '删除';
+      deleteBtn.title = t('settings.opencode.delete');
       deleteBtn.addEventListener('click', async () => {
-        if (confirm('确定删除账号「' + name + '」吗？')) {
+        if (confirm(t('settings.opencode.deleteConfirm', { name }))) {
           await api.deleteProfile(name);
           renderOpenCodeProfiles();
           updateOpenCodeProfilesStatus();
@@ -4797,7 +4797,7 @@ function renderOpenCodeProfiles() {
     if (!infoEl) continue;
 
     if (s.expired) {
-      infoEl.textContent = '已过期';
+      infoEl.textContent = t('settings.opencode.statusExpired');
     } else if (s.linked) {
       const parts = [];
       if (s.go) parts.push('Go');
@@ -4810,7 +4810,7 @@ function renderOpenCodeProfiles() {
     } else if (s.error) {
       infoEl.textContent = s.error;
     } else {
-      infoEl.textContent = '连接失败';
+      infoEl.textContent = t('settings.opencode.connectFailed');
     }
   }
 
@@ -4820,16 +4820,11 @@ function renderOpenCodeProfiles() {
     const linkedCount = Object.values(profiles).filter(s => s.linked).length;
     const totalCount = Object.keys(profiles).length;
     if (totalCount > 0) {
-      totalEl.textContent = linkedCount + '/' + totalCount + ' 已连接';
+      totalEl.textContent = t('settings.opencode.connected', { linked: linkedCount, total: totalCount });
     } else {
-      totalEl.textContent = '未配置';
+      totalEl.textContent = t('settings.opencode.statusNotSet');
     }
   }
-}
-
-async function refreshOpencodeStatus() {
-  renderOpenCodeProfiles();
-  updateOpenCodeProfilesStatus();
 }
 
 function renderCursorStatus() {
@@ -5212,13 +5207,9 @@ function setupCursorAccountUI() {
   const opencodeToggle = document.getElementById('opencodeSettingsToggle');
   if (opencodeToggle) {
     opencodeToggle.addEventListener('click', () => {
-      const details = document.getElementById('opencodeSettingsDetails');
-      const expanded = details.classList.contains('hidden');
-      details.classList.toggle('hidden', !expanded);
-      opencodeToggle.setAttribute('aria-expanded', String(expanded));
-      if (expanded) {
-        renderOpenCodeProfiles();
-      }
+      const expanding = document.getElementById('opencodeSettingsDetails').classList.contains('hidden');
+      setOpencodeCookieExpanded(expanding);
+      if (expanding) renderOpenCodeProfiles();
     });
 
     document.getElementById('opencodeCookieSubmit').addEventListener('click', async () => {
@@ -5238,7 +5229,7 @@ function setupCursorAccountUI() {
         updateOpenCodeProfilesStatus();
         renderSettingsSummaries();
       } else {
-        errorEl.textContent = result.error || '保存失败';
+        errorEl.textContent = result.error || t('settings.opencode.saveFailedShort');
         errorEl.classList.remove('hidden');
       }
     });

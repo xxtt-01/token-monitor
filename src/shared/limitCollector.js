@@ -1832,22 +1832,13 @@ async function fetchOpenCodeLimits(options = {}, deps = {}) {
   // ── Multi-account (2+ cookies): separate per-profile providers ────────────
   const providers = [];
 
-  // Local usage (total across all accounts)
-  if (goLocal.status === 'ok') {
-    providers.push(normalizeLimitProvider({
-      provider: 'opencode',
-      accountKey: hashKey('opencode', 'profile:local'),
-      accountLabel: 'Local',
-      source: 'local',
-      status: 'ok',
-      updatedAt,
-      windows: goLocal.windows
-    }));
-  }
-
-  // Each enabled profile
-  for (const { name, cookie } of cookies) {
-    const provider = await fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, nowMs, updatedAt);
+  // Each enabled profile — query in parallel
+  const results = await Promise.all(
+    cookies.map(({ name, cookie }) =>
+      fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, nowMs, updatedAt)
+    )
+  );
+  for (const provider of results) {
     if (provider) providers.push(provider);
   }
 
@@ -1901,9 +1892,24 @@ async function fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, no
       status = failStatus;
     }
 
+    // Stable accountKey derived from workspaceId (preferred) or cookie hash,
+    // not from the user-editable profile name — so the same account is
+    // consistently identified across machines and renames.
+    const goWid = goWeb?.workspaceId || '';
+    const zenWid = zen?.workspaceId || '';
+    let accountKey;
+    if (goWeb && goWeb.status === 'ok' && goWid) {
+      accountKey = hashKey('opencode', `go:${goWid}`);
+    } else if (zen && zen.status === 'ok' && zenWid) {
+      accountKey = hashKey('opencode', `zen:${zenWid}`);
+    } else {
+      const cookieHash = crypto.createHash('sha256').update(cookie).digest('hex').slice(0, 12);
+      accountKey = hashKey('opencode', `cookie:${cookieHash}`);
+    }
+
     return normalizeLimitProvider({
       provider: 'opencode',
-      accountKey: hashKey('opencode', `profile:${name}`),
+      accountKey,
       accountLabel: name,
       source: 'web',
       status,
@@ -1913,8 +1919,9 @@ async function fetchSingleOpenCodeProfile(name, cookie, fetchGoWeb, fetchZen, no
     });
   } catch (err) {
     clearTimeout(timer);
+    const cookieHash = crypto.createHash('sha256').update(cookie).digest('hex').slice(0, 12);
     return normalizeLimitProvider({
-      provider: 'opencode', accountKey: hashKey('opencode', `profile:${name}`),
+      provider: 'opencode', accountKey: hashKey('opencode', `cookie:${cookieHash}`),
       accountLabel: name, source: 'web', status: 'unavailable',
       updatedAt, windows: [], balanceUsd: null
     });
