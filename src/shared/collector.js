@@ -584,7 +584,12 @@ function startCollector(options) {
       if (saved.configFingerprint === fp) {
         anchor = { dateKey: saved.dateKey, today: saved.today, month: saved.month, allTime: saved.allTime };
         wslAnchor = saved.wslBundle || null;
-        lastFullScanAt = Date.now();
+        if (saved.fullScanAt) {
+          const parsed = Date.parse(saved.fullScanAt);
+          lastFullScanAt = Number.isFinite(parsed) ? parsed : 0;
+        } else {
+          lastFullScanAt = 0;
+        }
       }
     }
   } catch (_) {}
@@ -630,7 +635,8 @@ function startCollector(options) {
             month: anchor.month,
             allTime: anchor.allTime,
             wslBundle: wslAnchor,
-            configFingerprint: configFingerprint(clients, allTimeSince)
+            configFingerprint: configFingerprint(clients, allTimeSince),
+            fullScanAt: new Date().toISOString()
           }));
         } catch (_) {}
       }

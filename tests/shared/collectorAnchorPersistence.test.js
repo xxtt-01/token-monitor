@@ -1,14 +1,35 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
+
+const collectorPath = require.resolve('../../src/shared/collector');
+
+function freshCollector() {
+  delete require.cache[collectorPath];
+  return require(collectorPath);
+}
 
 const {
   configFingerprint,
   collectUsageOnce,
   localTodayKey
 } = require('../../src/shared/collector');
+
 const { emptyPeriod } = require('../../src/shared/usage');
+
+const baseOptions = {
+  clients: 'claude',
+  allTimeSince: '2024-01-01',
+  commandTimeoutMs: 1000,
+  deviceId: 'test-device',
+  agentVersion: 'test',
+  limitsEnabled: false,
+  historyEnabled: false
+};
 
 test('configFingerprint normalizes clients and includes allTimeSince', () => {
   const a = configFingerprint('claude, codex', '2024-01-01');
@@ -88,4 +109,115 @@ test('anchored tick with valid anchor runs todayOnly scan and derives month/allT
 
 function emptyWslBundle() {
   return { today: emptyPeriod(), month: emptyPeriod(), allTime: emptyPeriod() };
+}
+
+test('restart reuse: anchor file on disk enables todayOnly on first interval tick', async () => {
+  const tmpShared = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-restart-'));
+  const dateKey = localTodayKey();
+
+  // Write a valid anchor file to the isolated shared dir
+  fs.mkdirSync(path.join(tmpShared), { recursive: true });
+  const anchorData = {
+    dateKey,
+    today: { totalTokens: 50, costUsd: 0, clients: { claude: 50 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} },
+    month: { totalTokens: 500, costUsd: 0, clients: { claude: 500 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} },
+    allTime: { totalTokens: 5000, costUsd: 0, clients: { claude: 5000 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} },
+    wslBundle: null,
+    configFingerprint: 'claude|2024-01-01',
+    fullScanAt: new Date(Date.now() - 300000).toISOString() // 5 minutes ago — within the 1h safety window
+  };
+  fs.writeFileSync(path.join(tmpShared, 'collector-anchor.json'), JSON.stringify(anchorData));
+
+  // Mock spawn BEFORE freshCollector so the re-required module picks it up
+  const childProcess = require('node:child_process');
+  const originalSpawn = childProcess.spawn;
+  const calls = [];
+  childProcess.spawn = () => {
+    calls.push('spawn');
+    const { EventEmitter } = require('node:events');
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = { end: () => {} };
+    child.kill = () => {};
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(JSON.stringify({ entries: [] })));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  const originalSharedDir = process.env.TOKEN_MONITOR_SHARED_DIR;
+  process.env.TOKEN_MONITOR_SHARED_DIR = tmpShared;
+  let handle;
+  try {
+    const { startCollector } = freshCollector();
+    const updates = [];
+    handle = startCollector({
+      ...baseOptions,
+      intervalMs: 60 * 60 * 1000,
+      watchEnabled: false,
+      onUpdate: () => updates.push(true)
+    });
+
+    // Wait for the first interval tick
+    await waitForCondition(() => updates.length === 1);
+    // With a valid anchor on disk, the first tick should be todayOnly (1 spawn)
+    assert.equal(calls.length, 1, 'anchor from disk enables todayOnly — one spawn, not three');
+    handle.stop();
+  } finally {
+    childProcess.spawn = originalSpawn;
+    if (originalSharedDir === undefined) delete process.env.TOKEN_MONITOR_SHARED_DIR;
+    else process.env.TOKEN_MONITOR_SHARED_DIR = originalSharedDir;
+    if (handle) try { handle.stop(); } catch (_) {}
+    delete require.cache[collectorPath];
+    fs.rmSync(tmpShared, { recursive: true, force: true });
+  }
+});
+
+test('cross-day anchor invalidation: stale dateKey triggers full scan', async () => {
+  const childProcess = require('node:child_process');
+  const originalSpawn = childProcess.spawn;
+  const calls = [];
+  childProcess.spawn = () => {
+    calls.push('spawn');
+    const { EventEmitter } = require('node:events');
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = { end: () => {} };
+    child.kill = () => {};
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(JSON.stringify({ entries: [] })));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  try {
+    const { collectUsageOnce } = freshCollector();
+    const { emptyPeriod } = require('../../src/shared/usage');
+    const anchor = { dateKey: '2020-01-01', today: emptyPeriod(), month: emptyPeriod(), allTime: emptyPeriod() };
+    await collectUsageOnce({ ...baseOptions, todayOnlyAnchor: anchor });
+    assert.equal(calls.length, 3, 'stale dateKey anchor should trigger full 3-scan tick');
+  } finally {
+    childProcess.spawn = originalSpawn;
+    delete require.cache[collectorPath];
+  }
+});
+
+function waitForCondition(predicate, timeoutMs = 3000) {
+  if (predicate()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      if (predicate()) {
+        clearInterval(interval);
+        resolve();
+      } else if (Date.now() - startedAt > timeoutMs) {
+        clearInterval(interval);
+        reject(new Error('Timed out waiting for condition'));
+      }
+    }, 5);
+  });
 }
