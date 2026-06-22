@@ -1280,6 +1280,23 @@ function startLocalCollector() {
       sendPush({ event: 'stats', data: { type: 'stats', reason, stats: localStats, at: new Date().toISOString() } });
       sendStatus(true, { reason });
     },
+    // Progressive push: mid-tick partial results (today-only / today+month).
+    // Only wired for the local collector; sync/host modes never see these.
+    // History is carried forward by carryDeviceHistory; limits are carried
+    // forward manually so the limits panel doesn't flash empty between scans.
+    onPreview: (summary) => {
+      const visible = summaryWithArchivedClientUsage(summary);
+      const prevDevice = localDevice;
+      localDevice = carryDeviceHistory(localDevice, { ...visible, receivedAt: new Date().toISOString() });
+      if (!visible.limits && prevDevice?.limits) {
+        localDevice = { ...localDevice, limits: prevDevice.limits };
+      }
+      lastCollectedDevice = localDevice;
+      localStats = withHistoryPreview(aggregateDevices([localDevice], 0), [localDevice]);
+      updateDiscordRpc(localStats, settings.currency);
+      sendPush({ event: 'stats', data: { type: 'stats', reason: 'progress', stats: localStats, at: new Date().toISOString() } });
+      sendStatus(true, { reason: 'progress' });
+    },
     onError: (error, reason) => {
       sendStatus(false, { reason: `${reason}:${error.message}` });
     },

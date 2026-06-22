@@ -524,7 +524,7 @@ function startCollector(options) {
   const {
     clients, allTimeSince, commandTimeoutMs, deviceId, agentVersion, agentRuntime,
     intervalMs, historyIntervalMs = 15 * 60 * 1000, historyEnabled = true, watchEnabled, watchDebounceMs, limitsEnabled,
-    onUpdate, onError, logger
+    onUpdate, onPreview, onError, logger
   } = options;
   const log = logger || (() => {});
   const limitsCollector = limitsEnabled !== false ? createLimitsCollector(options) : null;
@@ -575,17 +575,19 @@ function startCollector(options) {
         onProgress: (partial) => {
           if (!partial.today) return;
           try {
-            onUpdate?.({
-              deviceId, hostname: os.hostname(),
-              platform: `${process.platform}-${process.arch}`,
-              updatedAt: partial.updatedAt,
-              agentVersion, agentRuntime,
-              trackedClients: (clients || '').split(',').filter(Boolean),
-              clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
-              today: partial.today,
-              month: partial.month || emptyPeriod(),
-              allTime: partial.allTime || emptyPeriod()
-            }, 'progress');
+            if (typeof onPreview === 'function') {
+              onPreview({
+                deviceId, hostname: os.hostname(),
+                platform: `${process.platform}-${process.arch}`,
+                updatedAt: partial.updatedAt,
+                agentVersion, agentRuntime,
+                trackedClients: (clients || '').split(',').filter(Boolean),
+                clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
+                today: partial.today,
+                month: partial.month || emptyPeriod(),
+                allTime: partial.allTime || emptyPeriod()
+              });
+            }
           } catch (_) {
             // Progressive push errors must not abort the remaining period scans.
             // The final onUpdate will report the complete data.
