@@ -576,17 +576,33 @@ function startCollector(options) {
           if (!partial.today) return;
           try {
             if (typeof onPreview === 'function') {
-              onPreview({
+              const preview = {
                 deviceId, hostname: os.hostname(),
                 platform: `${process.platform}-${process.arch}`,
                 updatedAt: partial.updatedAt,
                 agentVersion, agentRuntime,
                 trackedClients: (clients || '').split(',').filter(Boolean),
-                clientStatus: deriveClientStatus(clients, partial.allTime || partial.month || partial.today),
-                today: partial.today,
-                month: partial.month || emptyPeriod(),
-                allTime: partial.allTime || emptyPeriod()
-              });
+                today: partial.today
+              };
+              // Only include month/allTime when actually scanned. During warm
+              // full scans the main.js handler carries the previous values
+              // forward for omitted fields, so these cards don't flash empty.
+              if (partial.month) {
+                preview.month = wslAnchor
+                  ? mergePeriods(partial.month, wslAnchor.month)
+                  : partial.month;
+              }
+              if (partial.allTime) {
+                preview.allTime = wslAnchor
+                  ? mergePeriods(partial.allTime, wslAnchor.allTime)
+                  : partial.allTime;
+              }
+              // Only derive clientStatus when allTime is available; warm
+              // scans carry the previous status forward in main.js.
+              if (partial.allTime) {
+                preview.clientStatus = deriveClientStatus(clients, partial.allTime);
+              }
+              onPreview(preview);
             }
           } catch (_) {
             // Progressive push errors must not abort the remaining period scans.
