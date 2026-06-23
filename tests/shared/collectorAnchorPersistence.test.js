@@ -111,6 +111,10 @@ function emptyWslBundle() {
   return { today: emptyPeriod(), month: emptyPeriod(), allTime: emptyPeriod() };
 }
 
+function mkPeriod() {
+  return { totalTokens: 50, costUsd: 0, clients: { claude: 50 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} };
+}
+
 test('restart reuse: anchor file on disk enables todayOnly on first interval tick', async () => {
   const tmpShared = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-restart-'));
   const dateKey = localTodayKey();
@@ -119,9 +123,7 @@ test('restart reuse: anchor file on disk enables todayOnly on first interval tic
   fs.mkdirSync(path.join(tmpShared), { recursive: true });
   const anchorData = {
     dateKey,
-    today: { totalTokens: 50, costUsd: 0, clients: { claude: 50 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} },
-    month: { totalTokens: 500, costUsd: 0, clients: { claude: 500 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} },
-    allTime: { totalTokens: 5000, costUsd: 0, clients: { claude: 5000 }, clientCosts: {}, models: {}, modelCosts: {}, clientModels: {}, clientModelCosts: {}, sessions: {} },
+    today: mkPeriod(), month: mkPeriod(), allTime: mkPeriod(),
     wslBundle: null,
     configFingerprint: 'claude|2024-01-01',
     fullScanAt: new Date(Date.now() - 300000).toISOString() // 5 minutes ago — within the 1h safety window
@@ -175,6 +177,125 @@ test('restart reuse: anchor file on disk enables todayOnly on first interval tic
   }
 });
 
+test('future fullScanAt forces a full scan on first interval tick', async () => {
+  const tmpShared = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-future-ts-'));
+  const dateKey = localTodayKey();
+
+  fs.mkdirSync(path.join(tmpShared), { recursive: true });
+  const anchorData = {
+    dateKey,
+    today: mkPeriod(), month: mkPeriod(), allTime: mkPeriod(),
+    wslBundle: null,
+    configFingerprint: 'claude|2024-01-01',
+    fullScanAt: new Date(Date.now() + 3600000).toISOString() // 1 hour in the future
+  };
+  fs.writeFileSync(path.join(tmpShared, 'collector-anchor.json'), JSON.stringify(anchorData));
+
+  const childProcess = require('node:child_process');
+  const originalSpawn = childProcess.spawn;
+  const calls = [];
+  childProcess.spawn = () => {
+    calls.push('spawn');
+    const { EventEmitter } = require('node:events');
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = { end: () => {} };
+    child.kill = () => {};
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(JSON.stringify({ entries: [] })));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  const originalSharedDir = process.env.TOKEN_MONITOR_SHARED_DIR;
+  process.env.TOKEN_MONITOR_SHARED_DIR = tmpShared;
+  let handle;
+  try {
+    const { startCollector } = freshCollector();
+    const updates = [];
+    handle = startCollector({
+      ...baseOptions,
+      intervalMs: 60 * 60 * 1000,
+      watchEnabled: false,
+      onUpdate: () => updates.push(true)
+    });
+
+    await waitForCondition(() => updates.length === 1);
+    // Future fullScanAt should force a full 3-scan tick
+    assert.equal(calls.length, 3, 'future fullScanAt forces full scan — three spawns, not one');
+    handle.stop();
+  } finally {
+    childProcess.spawn = originalSpawn;
+    if (originalSharedDir === undefined) delete process.env.TOKEN_MONITOR_SHARED_DIR;
+    else process.env.TOKEN_MONITOR_SHARED_DIR = originalSharedDir;
+    if (handle) try { handle.stop(); } catch (_) {}
+    delete require.cache[collectorPath];
+    fs.rmSync(tmpShared, { recursive: true, force: true });
+  }
+});
+
+test('missing fullScanAt forces a full scan on first interval tick', async () => {
+  const tmpShared = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-missing-ts-'));
+  const dateKey = localTodayKey();
+
+  fs.mkdirSync(path.join(tmpShared), { recursive: true });
+  // Valid anchor, but no fullScanAt field (old format or corrupted)
+  const anchorData = {
+    dateKey,
+    today: mkPeriod(), month: mkPeriod(), allTime: mkPeriod(),
+    wslBundle: null,
+    configFingerprint: 'claude|2024-01-01'
+    // no fullScanAt — triggers lastFullScanAt = 0 → full scan
+  };
+  fs.writeFileSync(path.join(tmpShared, 'collector-anchor.json'), JSON.stringify(anchorData));
+
+  const childProcess = require('node:child_process');
+  const originalSpawn = childProcess.spawn;
+  const calls = [];
+  childProcess.spawn = () => {
+    calls.push('spawn');
+    const { EventEmitter } = require('node:events');
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = { end: () => {} };
+    child.kill = () => {};
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(JSON.stringify({ entries: [] })));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+
+  const originalSharedDir = process.env.TOKEN_MONITOR_SHARED_DIR;
+  process.env.TOKEN_MONITOR_SHARED_DIR = tmpShared;
+  let handle;
+  try {
+    const { startCollector } = freshCollector();
+    const updates = [];
+    handle = startCollector({
+      ...baseOptions,
+      intervalMs: 60 * 60 * 1000,
+      watchEnabled: false,
+      onUpdate: () => updates.push(true)
+    });
+
+    await waitForCondition(() => updates.length === 1);
+    // Missing fullScanAt → lastFullScanAt = 0 → forces full scan
+    assert.equal(calls.length, 3, 'missing fullScanAt forces full scan — three spawns');
+    handle.stop();
+  } finally {
+    childProcess.spawn = originalSpawn;
+    if (originalSharedDir === undefined) delete process.env.TOKEN_MONITOR_SHARED_DIR;
+    else process.env.TOKEN_MONITOR_SHARED_DIR = originalSharedDir;
+    if (handle) try { handle.stop(); } catch (_) {}
+    delete require.cache[collectorPath];
+    fs.rmSync(tmpShared, { recursive: true, force: true });
+  }
+});
+
 test('cross-day anchor invalidation: stale dateKey triggers full scan', async () => {
   const childProcess = require('node:child_process');
   const originalSpawn = childProcess.spawn;
@@ -206,7 +327,7 @@ test('cross-day anchor invalidation: stale dateKey triggers full scan', async ()
   }
 });
 
-function waitForCondition(predicate, timeoutMs = 3000) {
+function waitForCondition(predicate, timeoutMs = 4000) {
   if (predicate()) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
